@@ -1,6 +1,14 @@
+import { loadImage, type ImageViewport } from "./image-viewport";
 import { PresentedFiles, ProposalCard } from "./turn-cards";
 import type { ActionCard } from "../shared/cards";
-import { createContext, useContext, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { useRpc } from "@getpaseo/plugin/client";
 import { copyText, Icon, Markdown } from "@getpaseo/plugin/client/ui";
@@ -16,6 +24,7 @@ import { errorText, type Theme } from "./common";
 
 type ChatStyle = {
   theme: Theme;
+  images: ImageViewport;
   instance: string;
   hostId: string;
   report: (message: string) => void;
@@ -181,41 +190,76 @@ function Fold({
     </View>
   );
 }
-function FileCard({ file, seq }: { file: Attachment; seq: number }) {
-  const {
-      theme: { colors: c },
-      instance,
-      hostId,
-    } = useChat(),
+function ImagePreview({ file, seq }: { file: Attachment; seq: number }) {
+  const { instance, hostId, theme } = useChat(),
     fetch = useRpc(imageAttachment);
   const [decodeFailed, setDecodeFailed] = useState(false);
-  const image = file.kind === "image" && !!file.id;
   const q = useQuery({
     queryKey: ["router-image", hostId, instance, seq, file.id],
-    queryFn: () => fetch({ instance, seq, id: file.id! }),
-    enabled: image,
+    queryFn: ({ signal }) =>
+      loadImage(signal, () => fetch({ instance, seq, id: file.id! })),
     staleTime: Infinity,
+    gcTime: 60_000,
     retry: false,
+    retryOnMount: false,
   });
-  if (image && q.data && !decodeFailed) {
-    const ratio =
-      file.width && file.height ? file.width / file.height : 230 / 150;
+  if (q.data && !decodeFailed)
     return (
       <Image
-        source={{ uri: "data:" + q.data.mime + ";base64," + q.data.data }}
         accessibilityLabel={file.name}
         resizeMode="contain"
+        source={{ uri: "data:" + q.data.mime + ";base64," + q.data.data }}
+        style={{ width: "100%", height: "100%" }}
         onError={() => setDecodeFailed(true)}
-        style={{
-          maxWidth: "100%",
-          width: Math.min(230, 180 * ratio),
-          aspectRatio: ratio,
-          borderRadius: 12,
-          backgroundColor: c.surface1,
-        }}
       />
     );
-  }
+  return (
+    <Text
+      numberOfLines={2}
+      style={{
+        fontSize: 12,
+        color: theme.colors.foregroundMuted,
+        textAlign: "center",
+      }}
+    >
+      {q.error || decodeFailed ? "图片无法预览" : "加载图片…"}
+    </Text>
+  );
+}
+function ImageSlot({ file, seq }: { file: Attachment; seq: number }) {
+  const { images, theme } = useChat();
+  const node = useRef<View>(null),
+    [near, setNear] = useState(false);
+  useEffect(() => {
+    if (node.current) return images.watch(node.current, setNear);
+  }, [images]);
+  const ratio =
+    file.width && file.height ? file.width / file.height : 230 / 150;
+  return (
+    <View
+      ref={node}
+      collapsable={false}
+      onLayout={images.layoutChanged}
+      style={{
+        maxWidth: "100%",
+        width: Math.min(230, 180 * ratio),
+        aspectRatio: ratio,
+        borderRadius: 12,
+        overflow: "hidden",
+        backgroundColor: theme.colors.surface1,
+        justifyContent: "center",
+      }}
+    >
+      {near && <ImagePreview file={file} seq={seq} />}
+    </View>
+  );
+}
+function FileCard({ file, seq }: { file: Attachment; seq: number }) {
+  const {
+    theme: { colors: c },
+  } = useChat();
+  if (file.kind === "image" && file.id)
+    return <ImageSlot file={file} seq={seq} />;
   const ext = file.name.includes(".")
       ? file.name.split(".").pop()?.toUpperCase()
       : "文件",
@@ -258,9 +302,7 @@ function FileCard({ file, seq }: { file: Attachment; seq: number }) {
         </Text>
         <Text style={{ fontSize: 12, color: c.foregroundMuted }}>
           {file.kind === "image"
-            ? !image || q.error || decodeFailed
-              ? "图片无法预览"
-              : "加载图片…"
+            ? "图片无法预览"
             : [ext, size].filter(Boolean).join("  ")}
         </Text>
       </View>

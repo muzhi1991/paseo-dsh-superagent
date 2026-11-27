@@ -1,3 +1,4 @@
+import { ImageViewport } from "./image-viewport";
 import { MobileFrame } from "./mobile-frame";
 import {
   useImperativeHandle,
@@ -127,6 +128,8 @@ export function Router({
   }, [data]);
   const visible = window ?? data;
   const [positioned, setPositioned] = useState(false);
+  const [images] = useState(() => new ImageViewport());
+  const logHeight = useRef(0);
   const turns = useMemo(
     () => groupTurns(visible?.events || []),
     [visible?.events],
@@ -222,7 +225,9 @@ export function Router({
     </>
   );
   const conversation = (
-    <ChatContext.Provider value={{ theme, hostId: host.id, instance, report }}>
+    <ChatContext.Provider
+      value={{ theme, hostId: host.id, instance, report, images }}
+    >
       <View
         style={{ flex: 1, backgroundColor: colors.surface0 }}
         accessibilityElementsHidden={compact && pickerOpen}
@@ -308,7 +313,16 @@ export function Router({
             initialFollow.current = false;
             return false;
           }}
-          onLayout={() => {
+          onLayout={(e) => {
+            logHeight.current = e.nativeEvent.layout.height;
+            images.layoutChanged();
+            if (scrolledSeq.current !== undefined)
+              images.scroll(
+                initialFollow.current
+                  ? scrollMetrics.current.height - logHeight.current
+                  : scrollMetrics.current.y,
+                logHeight.current,
+              );
             if (initialFollow.current && latestSeq !== undefined)
               log.current?.scrollToEnd({ animated: false });
           }}
@@ -317,6 +331,13 @@ export function Router({
               prior = scrollMetrics.current.y;
             if (prior > n.contentOffset.y) initialFollow.current = false;
             scrollMetrics.current.y = n.contentOffset.y;
+            if (scrolledSeq.current !== undefined)
+              images.scroll(
+                initialFollow.current
+                  ? n.contentSize.height - n.layoutMeasurement.height
+                  : n.contentOffset.y,
+                n.layoutMeasurement.height,
+              );
             following.current =
               n.contentOffset.y + n.layoutMeasurement.height >=
               n.contentSize.height - 45;
@@ -330,14 +351,20 @@ export function Router({
           scrollEventThrottle={80}
           onContentSizeChange={(_, height) => {
             scrollMetrics.current.height = height;
+            images.layoutChanged();
             if (prependHeight.current !== null) {
               const delta = height - prependHeight.current;
               prependHeight.current = null;
-              if (delta > 0)
+              if (delta > 0) {
+                images.scroll(
+                  scrollMetrics.current.y + delta,
+                  logHeight.current,
+                );
                 log.current?.scrollTo({
                   y: scrollMetrics.current.y + delta,
                   animated: false,
                 });
+              }
               return;
             }
             if (
@@ -345,34 +372,46 @@ export function Router({
               (initialFollow.current || scrolledSeq.current !== latestSeq)
             ) {
               scrolledSeq.current = latestSeq;
-              if (initialFollow.current || following.current)
+              if (initialFollow.current || following.current) {
+                images.scroll(height - logHeight.current, logHeight.current);
                 log.current?.scrollToEnd({ animated: false });
+              }
               if (!positioned) setPositioned(true);
             }
           }}
-          contentContainerStyle={{
-            width: "100%",
-            maxWidth: 716,
-            alignSelf: "center",
-            paddingHorizontal: 16,
-            paddingTop: 12,
-            paddingBottom: 14,
-          }}
         >
-          {visible?.older !== undefined && (
-            <Action theme={theme} disabled={disabled} onPress={loadEarlier}>
-              更早的消息
-            </Action>
-          )}
-          {!changed &&
-            turns.map((t) => (
-              <TurnView key={t.id} turn={t} card={data?.actionCards?.[t.id]} />
-            ))}
-          {!turns.length && !q.error && (
-            <Text style={{ textAlign: "center", color: muted, padding: 20 }}>
-              {q.isPending ? "正在读取主会话…" : "还没有对话"}
-            </Text>
-          )}
+          <View
+            ref={images.setRoot}
+            collapsable={false}
+            onLayout={images.layoutChanged}
+            style={{
+              width: "100%",
+              maxWidth: 716,
+              alignSelf: "center",
+              paddingHorizontal: 16,
+              paddingTop: 12,
+              paddingBottom: 14,
+            }}
+          >
+            {visible?.older !== undefined && (
+              <Action theme={theme} disabled={disabled} onPress={loadEarlier}>
+                更早的消息
+              </Action>
+            )}
+            {!changed &&
+              turns.map((t) => (
+                <TurnView
+                  key={t.id}
+                  turn={t}
+                  card={data?.actionCards?.[t.id]}
+                />
+              ))}
+            {!turns.length && !q.error && (
+              <Text style={{ textAlign: "center", color: muted, padding: 20 }}>
+                {q.isPending ? "正在读取主会话…" : "还没有对话"}
+              </Text>
+            )}
+          </View>
         </ScrollView>
 
         <View
