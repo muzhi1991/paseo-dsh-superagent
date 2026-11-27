@@ -8,7 +8,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { type PluginScreenProps, useRpc } from "@getpaseo/plugin/client";
-import { Icon, Modal } from "@getpaseo/plugin/client/ui";
+import { Icon } from "@getpaseo/plugin/client/ui";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import {
   view,
@@ -18,6 +18,7 @@ import {
   type Route,
 } from "../shared/supervision";
 import { Action, Notice, errorText } from "./common";
+import { PanelDialog } from "./panel-dialog";
 import { Router } from "./router";
 import { Surface } from "./surface";
 import { PageContents } from "./views";
@@ -28,7 +29,12 @@ type Confirmation = {
   instance: string;
   after?: () => void;
 };
-export function Panel(props: PluginScreenProps) {
+export function Panel(
+  props: PluginScreenProps & {
+    closePanel?: () => void;
+    openLinkedAgent?: (id: string) => void;
+  },
+) {
   const { theme, host } = props,
     { colors } = theme,
     windowWidth = useWindowDimensions().width;
@@ -114,6 +120,7 @@ export function Panel(props: PluginScreenProps) {
     );
   const field = (
     <TextInput
+      autoFocus={small && searching}
       accessibilityLabel="搜索工单、线程或触发"
       placeholder="搜索工单、线程或触发"
       placeholderTextColor={colors.foregroundMuted}
@@ -140,6 +147,7 @@ export function Panel(props: PluginScreenProps) {
       value={{
         theme,
         compact: small,
+        fullscreen: !!props.closePanel,
         instance: result?.instance,
         drafts: drafts.current,
         go: navigate,
@@ -164,18 +172,29 @@ export function Panel(props: PluginScreenProps) {
               flexDirection: "row",
               alignItems: "center",
               gap: 6,
-              paddingTop: small ? 5 : 18,
+              paddingTop: props.closePanel ? 0 : small ? 5 : 18,
+              minHeight: props.closePanel ? 54 : undefined,
             }}
           >
+            {props.closePanel && (
+              <Action
+                theme={theme}
+                label="返回 Paseo"
+                onPress={props.closePanel}
+              >
+                <Icon name="ArrowLeft" size={20} color={colors.foreground} />
+              </Action>
+            )}
             <Text
+              numberOfLines={1}
               style={{
                 flex: 1,
                 color: colors.foreground,
                 fontWeight: "600",
-                fontSize: 15,
+                fontSize: props.closePanel ? 16 : 15,
               }}
             >
-              Superagent
+              {props.closePanel ? "DSH Superagent" : "Superagent"}
             </Text>
             {small ? (
               <Action
@@ -292,14 +311,16 @@ export function Panel(props: PluginScreenProps) {
                 items={items}
               />
             )}
-            {result?.agent && props.navigation && (
+            {result?.agent && (props.navigation || props.openLinkedAgent) && (
               <Action
                 theme={theme}
                 onPress={() =>
-                  props.navigation?.openAgent({
-                    serverId: host.id,
-                    agentId: result.agent!,
-                  })
+                  props.openLinkedAgent
+                    ? props.openLinkedAgent(result.agent!)
+                    : props.navigation?.openAgent({
+                        serverId: host.id,
+                        agentId: result.agent!,
+                      })
                 }
               >
                 打开执行 Agent ↗
@@ -308,36 +329,31 @@ export function Panel(props: PluginScreenProps) {
           </ScrollView>
         </View>
         {pending && (
-          <Modal
+          <PanelDialog
             title="确认操作"
-            open
-            onOpenChange={(open) => {
-              if (!open && !lock.current) setPending(null);
+            onClose={() => {
+              if (!lock.current) setPending(null);
             }}
           >
-            <Modal.Content>
-              <Text style={{ color: colors.foreground }}>{pending.title}</Text>
-              <View
-                style={{ flexDirection: "row", justifyContent: "flex-end" }}
+            <Text style={{ color: colors.foreground }}>{pending.title}</Text>
+            <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+              <Action
+                theme={theme}
+                disabled={busy}
+                onPress={() => setPending(null)}
               >
-                <Action
-                  theme={theme}
-                  disabled={busy}
-                  onPress={() => setPending(null)}
-                >
-                  取消
-                </Action>
-                <Action
-                  theme={theme}
-                  selected
-                  disabled={busy}
-                  onPress={() => void apply()}
-                >
-                  {busy ? "处理中…" : "确认"}
-                </Action>
-              </View>
-            </Modal.Content>
-          </Modal>
+                取消
+              </Action>
+              <Action
+                theme={theme}
+                selected
+                disabled={busy}
+                onPress={() => void apply()}
+              >
+                {busy ? "处理中…" : "确认"}
+              </Action>
+            </View>
+          </PanelDialog>
         )}
       </View>
     </Surface.Provider>

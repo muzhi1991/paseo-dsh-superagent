@@ -7,6 +7,7 @@ import type { Theme } from "./common";
 export const Surface = createContext<{
   theme: Theme;
   compact: boolean;
+  fullscreen: boolean;
   instance?: string;
   drafts: Map<string, unknown>;
   go: (r: Route) => void;

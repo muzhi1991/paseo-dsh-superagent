@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { Platform, Pressable, Text, TextInput, View } from "react-native";
-import { Icon, Modal } from "@getpaseo/plugin/client/ui";
+import { PanelDialog } from "./panel-dialog";
+import { Icon } from "@getpaseo/plugin/client/ui";
 import { useSurface } from "./surface";
 
 type ChoiceProps = {
@@ -198,34 +199,30 @@ export function ChoiceField({ label, items, active, choose }: ChoiceProps) {
         <Icon name="ChevronDown" size={14} color={colors.foregroundMuted} />
       </Pressable>
       {open && (
-        <Modal title={label} open onOpenChange={setOpen}>
-          <Modal.Content>
-            {Object.entries(items).map(([id, title]) => (
-              <Pressable
-                key={id}
-                accessibilityRole="radio"
-                accessibilityState={{ checked: id === active }}
-                onPress={() => {
-                  setOpen(false);
-                  if (id !== active) choose(id);
-                }}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  minHeight: 42,
-                  gap: 8,
-                }}
-              >
-                <Text style={{ flex: 1, color: colors.foreground }}>
-                  {title}
-                </Text>
-                {id === active && (
-                  <Icon name="Check" size={16} color={colors.foreground} />
-                )}
-              </Pressable>
-            ))}
-          </Modal.Content>
-        </Modal>
+        <PanelDialog title={label} onClose={() => setOpen(false)}>
+          {Object.entries(items).map(([id, title]) => (
+            <Pressable
+              key={id}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: id === active }}
+              onPress={() => {
+                setOpen(false);
+                if (id !== active) choose(id);
+              }}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                minHeight: 42,
+                gap: 8,
+              }}
+            >
+              <Text style={{ flex: 1, color: colors.foreground }}>{title}</Text>
+              {id === active && (
+                <Icon name="Check" size={16} color={colors.foreground} />
+              )}
+            </Pressable>
+          ))}
+        </PanelDialog>
       )}
     </>
   );
