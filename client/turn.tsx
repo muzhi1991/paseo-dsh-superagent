@@ -1,3 +1,5 @@
+import { PresentedFiles, ProposalCard } from "./turn-cards";
+import type { ActionCard } from "../shared/cards";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { useRpc } from "@getpaseo/plugin/client";
@@ -508,10 +510,9 @@ function processGroups(turn: Turn): ReactNode[] {
   flush();
   return groups;
 }
-export function TurnView({ turn: t }: { turn: Turn }) {
-  const {
-      theme: { colors: c },
-    } = useChat(),
+export function TurnView({ turn: t, card }: { turn: Turn; card?: ActionCard }) {
+  const { theme, report } = useChat(),
+    c = theme.colors,
     end = t.end,
     reason = end?.name,
     stopped = reason === "aborted" || reason === "interrupted",
@@ -558,6 +559,23 @@ export function TurnView({ turn: t }: { turn: Turn }) {
         </Text>
       )}
       {t.answer && <Message event={t.answer} footer tokens={t.tokens} />}
+      {end &&
+        [...t.plans.values()].map((plan) => (
+          <Fold
+            key={plan.callId}
+            variant="trigger"
+            label={plan.title}
+            icon="ClipboardList"
+          >
+            <Markdown>{plan.markdown}</Markdown>
+          </Fold>
+        ))}
+      {t.answer && t.presented.size > 0 && (
+        <PresentedFiles files={t.presented} theme={theme} report={report} />
+      )}
+      {end && t.answer && card && (
+        <ProposalCard key={card.callId} card={card} theme={theme} />
+      )}
     </View>
   );
 }

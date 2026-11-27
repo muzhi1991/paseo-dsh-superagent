@@ -364,7 +364,10 @@ export function Router({
               更早的消息
             </Action>
           )}
-          {!changed && turns.map((t) => <TurnView key={t.id} turn={t} />)}
+          {!changed &&
+            turns.map((t) => (
+              <TurnView key={t.id} turn={t} card={data?.actionCards?.[t.id]} />
+            ))}
           {!turns.length && !q.error && (
             <Text style={{ textAlign: "center", color: muted, padding: 20 }}>
               {q.isPending ? "正在读取主会话…" : "还没有对话"}

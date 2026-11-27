@@ -1,3 +1,10 @@
+import {
+  actionCard,
+  presentedFile,
+  type PresentedFile,
+  planDocument,
+  type PlanDocument,
+} from "./cards.ts";
 import { imageMediaType } from "./image.ts";
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
@@ -22,6 +29,8 @@ const event = z.object({
     "trigger",
     "call",
     "result",
+    "presented",
+    "plan",
   ]),
   text: z.string().optional(),
   source: z.string().optional(),
@@ -33,6 +42,8 @@ const event = z.object({
   error: z.boolean().optional(),
   tokens: z.number().optional(),
   files: z.array(attachment).optional(),
+  presented: z.array(presentedFile).optional(),
+  plan: planDocument.optional(),
 });
 export type TranscriptEvent = z.infer<typeof event>;
 export type Attachment = z.infer<typeof attachment>;
@@ -48,6 +59,7 @@ export const transcript = defineRpc({
     model: z.string(),
     effort: z.string(),
     events: z.array(event),
+    actionCards: z.record(z.string(), actionCard).optional(),
     older: z.number().optional(),
     busy: z.boolean(),
     stats: z.object({
@@ -89,6 +101,8 @@ export type Turn = {
   answer?: TranscriptEvent;
   tokens: number;
   results: Map<string, TranscriptEvent>;
+  presented: Map<string, PresentedFile>;
+  plans: Map<string, PlanDocument>;
 };
 /** DSH stores context injections in user/message records as well as ordinary prompts. */
 export function groupTurns(events: TranscriptEvent[]): Turn[] {
@@ -102,10 +116,16 @@ export function groupTurns(events: TranscriptEvent[]): Turn[] {
         process: [],
         tokens: 0,
         results: new Map(),
+        presented: new Map(),
+        plans: new Map(),
       };
       groups.set(e.turn, t);
     }
+    if (e.plan && !t.plans.has(e.plan.callId))
+      t.plans.set(e.plan.callId, e.plan);
     switch (e.kind) {
+      case "plan":
+        break;
       case "start":
         t.start = e;
         break;
@@ -117,6 +137,9 @@ export function groupTurns(events: TranscriptEvent[]): Turn[] {
         if (t.process.some((p) => p.kind === "call" || p.kind === "assistant"))
           t.process.push(e);
         else t.inputs.push(e);
+        break;
+      case "presented":
+        for (const file of e.presented ?? []) t.presented.set(file.path, file);
         break;
       case "result":
         if (e.call) t.results.set(e.call, e);

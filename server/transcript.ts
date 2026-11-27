@@ -1,3 +1,8 @@
+import {
+  actionCardsByTurn,
+  presentedFile,
+  submittedPlan,
+} from "../shared/cards.ts";
 import { imageMediaType } from "../shared/image.ts";
 import { rpc, target } from "./connection.ts";
 import type { TranscriptEvent, Attachment } from "../shared/transcript.ts";
@@ -162,8 +167,37 @@ export function projectEvents(
         });
         break;
       }
+      case "deliverables/presented": {
+        if (
+          !Number.isSafeInteger(d.turn) ||
+          d.turn < 1 ||
+          typeof d.callId !== "string" ||
+          !d.callId ||
+          !Array.isArray(d.files)
+        )
+          break;
+        const files = d.files.flatMap((value: unknown) => {
+          const file = presentedFile.safeParse(value);
+          return file.success ? [file.data] : [];
+        });
+        if (files.length)
+          rows.push({ ...base, kind: "presented", presented: files });
+        break;
+      }
+      case "tool/ptc-dispatch-start":
+      case "tool/ptc-dispatch": {
+        const plan = submittedPlan(e.type, d);
+        if (plan) rows.push({ ...base, kind: "plan", plan });
+        break;
+      }
       case "tool/call":
-        rows.push({ ...base, kind: "call", call: d.callId, name: d.name });
+        rows.push({
+          ...base,
+          kind: "call",
+          call: d.callId,
+          name: d.name,
+          plan: submittedPlan(e.type, d),
+        });
         break;
       case "tool/result":
         rows.push({
@@ -229,6 +263,7 @@ export async function readTranscript({
     model: sel.model || "选择模型",
     effort: sel.reasoningEffort || "",
     events,
+    ...(!before && { actionCards: actionCardsByTurn(v.actionCards) }),
     older: page.hasMore ? page.records[0]?.event.seq : undefined,
     busy:
       !before &&
