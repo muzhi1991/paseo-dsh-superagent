@@ -1,3 +1,4 @@
+import { MobileFrame } from "./mobile-frame";
 import {
   useImperativeHandle,
   type Ref,
@@ -7,11 +8,9 @@ import {
   useState,
 } from "react";
 import {
-  KeyboardAvoidingView,
   Modal as NativeModal,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   Text,
   TextInput,
@@ -379,7 +378,7 @@ export function Router({
             maxWidth: 738,
             alignSelf: "center",
             paddingHorizontal: 12,
-            paddingBottom: 12,
+            paddingBottom: compact || embeddedBack ? 0 : 12,
             paddingTop: 4,
             gap: 7,
           }}
@@ -619,14 +618,9 @@ export function Router({
       presentationStyle="fullScreen"
       onRequestClose={handleBack}
     >
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface0 }}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={{ flex: 1 }}
-        >
-          {compactContent}
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+      <MobileFrame backgroundColor={colors.surface0}>
+        {compactContent}
+      </MobileFrame>
     </NativeModal>
   ) : (
     <>

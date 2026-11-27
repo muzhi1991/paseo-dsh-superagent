@@ -1,9 +1,7 @@
+import { MobileFrame } from "./mobile-frame";
 import { useState, useRef } from "react";
 import {
-  KeyboardAvoidingView,
   Modal,
-  Platform,
-  SafeAreaView,
   View,
   Text,
   TextInput,
@@ -307,7 +305,9 @@ export function Panel(
             key={JSON.stringify(route)}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={
-              route.page === "设置" ? { flex: 1 } : { paddingBottom: 24 }
+              route.page === "设置"
+                ? { flex: 1 }
+                : { paddingBottom: props.closePanel ? 0 : 24 }
             }
           >
             {stack.length > 1 && (
@@ -406,14 +406,7 @@ export function Panel(
         else props.closePanel?.();
       }}
     >
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface0 }}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={{ flex: 1 }}
-        >
-          {content}
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+      <MobileFrame backgroundColor={colors.surface0}>{content}</MobileFrame>
     </Modal>
   );
 }
