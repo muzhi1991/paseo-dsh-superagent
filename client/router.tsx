@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useImperativeHandle,
+  type Ref,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   KeyboardAvoidingView,
   Modal as NativeModal,
@@ -63,9 +70,14 @@ export function Router({
   theme,
   host,
   expected,
+  embeddedBack,
   layout,
   back,
-}: PluginScreenProps & { expected?: string; back: () => void }) {
+}: PluginScreenProps & {
+  expected?: string;
+  embeddedBack?: Ref<() => void>;
+  back: () => void;
+}) {
   const history = useRpc(transcript),
     send = useRpc(api.send),
     stop = useRpc(api.cancel),
@@ -114,15 +126,22 @@ export function Router({
   useEffect(() => {
     if (data) setWindow((w) => merge(w, data));
   }, [data]);
-  const turns = useMemo(() => groupTurns(window?.events || []), [window]);
-  const latestSeq = window?.events.at(-1)?.seq,
+  const visible = window ?? data;
+  const [positioned, setPositioned] = useState(false);
+  const turns = useMemo(
+    () => groupTurns(visible?.events || []),
+    [visible?.events],
+  );
+  const latestSeq = visible?.events.at(-1)?.seq,
     scrolledSeq = useRef<number | undefined>(undefined);
+  const initialFollow = useRef(true);
   const scrollMetrics = useRef({ height: 0, y: 0 });
   const prependHeight = useRef<number | null>(null);
   function loadEarlier() {
-    const before = window?.older;
+    const before = visible?.older;
     if (before === undefined || disabled || lock.current) return;
     void run(async () => {
+      initialFollow.current = false;
       following.current = false;
       const page = await history({ before, instance });
       prependHeight.current = page.events.length
@@ -169,6 +188,8 @@ export function Router({
   };
   const pickerTitle = chosen ? "推理强度" : "选择模型";
   const pickerOpen = choices.length > 0;
+  const handleBack = pickerOpen ? closeChoices : back;
+  useImperativeHandle(embeddedBack, () => handleBack, [handleBack]);
   const pickerItems = pickerOpen && (
     <>
       {chosen
@@ -211,56 +232,63 @@ export function Router({
         }
         aria-hidden={compact && pickerOpen}
       >
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 12,
-            paddingLeft: compact ? 16 : 24,
-            paddingRight: compact ? 12 : 20,
-            minHeight: 54,
-            borderBottomWidth: 1,
-            borderColor: colors.border,
-          }}
-        >
+        {!embeddedBack && (
           <View
             style={{
-              flex: 1,
-              minWidth: 0,
               flexDirection: "row",
               alignItems: "center",
-              gap: 8,
+              gap: 12,
+              paddingLeft: compact ? 16 : 24,
+              paddingRight: compact ? 12 : 20,
+              minHeight: 54,
+              borderBottomWidth: 1,
+              borderColor: colors.border,
             }}
           >
-            <Text
-              numberOfLines={1}
+            {compact && (
+              <Action theme={theme} label="返回上一页" onPress={back}>
+                <Icon name="ArrowLeft" size={20} color={color} />
+              </Action>
+            )}
+            <View
               style={{
-                color,
-                fontSize: 16,
-                fontWeight: "600",
-                maxWidth: "100%",
-                flexShrink: 1,
+                flex: 1,
+                minWidth: 0,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
               }}
             >
-              {compact ? "DSH Superagent" : data?.title || "Router"}
-            </Text>
-            {!compact && (
-              <Text numberOfLines={1} style={{ color: muted, fontSize: 12 }}>
-                主 Session
+              <Text
+                numberOfLines={1}
+                style={{
+                  color,
+                  fontSize: 16,
+                  fontWeight: "600",
+                  maxWidth: "100%",
+                  flexShrink: 1,
+                }}
+              >
+                {compact ? "DSH Superagent" : data?.title || "Router"}
               </Text>
-            )}
-          </View>
-          <Action theme={theme} onPress={back} label="返回 Superagent">
-            <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
-            >
-              <Icon name="CornerUpLeft" size={15} color={color} />
-              <Text style={{ color, fontSize: 13, fontWeight: "500" }}>
-                返回面板
-              </Text>
+              {!compact && (
+                <Text numberOfLines={1} style={{ color: muted, fontSize: 12 }}>
+                  主 Session
+                </Text>
+              )}
             </View>
-          </Action>
-        </View>
+            <Action theme={theme} onPress={back} label="返回 Superagent">
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
+              >
+                <Icon name="CornerUpLeft" size={15} color={color} />
+                <Text style={{ color, fontSize: 13, fontWeight: "500" }}>
+                  返回面板
+                </Text>
+              </View>
+            </Action>
+          </View>
+        )}
         <Notice
           theme={theme}
           text={
@@ -270,12 +298,25 @@ export function Router({
           }
         />
         <ScrollView
+          key={latestSeq === undefined ? "empty" : "transcript"}
           ref={log}
-          style={{ flex: 1 }}
+          style={{
+            flex: 1,
+            opacity: latestSeq === undefined || positioned ? 1 : 0,
+          }}
           keyboardShouldPersistTaps="handled"
+          onStartShouldSetResponderCapture={() => {
+            initialFollow.current = false;
+            return false;
+          }}
+          onLayout={() => {
+            if (initialFollow.current && latestSeq !== undefined)
+              log.current?.scrollToEnd({ animated: false });
+          }}
           onScroll={(e) => {
             const n = e.nativeEvent,
               prior = scrollMetrics.current.y;
+            if (prior > n.contentOffset.y) initialFollow.current = false;
             scrollMetrics.current.y = n.contentOffset.y;
             following.current =
               n.contentOffset.y + n.layoutMeasurement.height >=
@@ -300,10 +341,14 @@ export function Router({
                 });
               return;
             }
-            if (latestSeq !== undefined && scrolledSeq.current !== latestSeq) {
+            if (
+              latestSeq !== undefined &&
+              (initialFollow.current || scrolledSeq.current !== latestSeq)
+            ) {
               scrolledSeq.current = latestSeq;
-              if (following.current)
+              if (initialFollow.current || following.current)
                 log.current?.scrollToEnd({ animated: false });
+              if (!positioned) setPositioned(true);
             }
           }}
           contentContainerStyle={{
@@ -315,7 +360,7 @@ export function Router({
             paddingBottom: 14,
           }}
         >
-          {window?.older !== undefined && (
+          {visible?.older !== undefined && (
             <Action theme={theme} disabled={disabled} onPress={loadEarlier}>
               更早的消息
             </Action>
@@ -491,7 +536,7 @@ export function Router({
               </Pressable>
             </View>
           </View>
-          {data && (
+          {data ? (
             <View
               style={{
                 flexDirection: "row",
@@ -511,67 +556,75 @@ export function Router({
                   : " · 上下文 " + data.stats.pressure + "%"}
               </Text>
             </View>
+          ) : (
+            <View style={{ height: 14 }} />
           )}
         </View>
       </View>
     </ChatContext.Provider>
   );
+  const compactContent = (
+    <>
+      {conversation}
+      {pickerOpen && (
+        <View
+          accessibilityViewIsModal
+          style={{
+            position: "absolute",
+            top: 0,
+            bottom: 0,
+            left: 0,
+            right: 0,
+            justifyContent: "flex-end",
+            backgroundColor: "rgba(0,0,0,0.4)",
+          }}
+        >
+          <Pressable
+            accessible={false}
+            onPress={closeChoices}
+            style={{ flex: 1 }}
+          />
+          <View
+            style={{
+              maxHeight: "80%",
+              backgroundColor: colors.surface1,
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+              padding: 16,
+            }}
+          >
+            <Text
+              accessibilityRole="header"
+              style={{
+                color,
+                fontSize: 16,
+                fontWeight: "600",
+                marginBottom: 8,
+              }}
+            >
+              {pickerTitle}
+            </Text>
+            <ScrollView keyboardShouldPersistTaps="handled">
+              {pickerItems}
+            </ScrollView>
+          </View>
+        </View>
+      )}
+    </>
+  );
+  if (embeddedBack) return compactContent;
   return compact ? (
     <NativeModal
       visible
       presentationStyle="fullScreen"
-      onRequestClose={pickerOpen ? closeChoices : back}
+      onRequestClose={handleBack}
     >
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface0 }}>
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={{ flex: 1 }}
         >
-          {conversation}
-          {pickerOpen && (
-            <View
-              accessibilityViewIsModal
-              style={{
-                position: "absolute",
-                top: 0,
-                bottom: 0,
-                left: 0,
-                right: 0,
-                justifyContent: "flex-end",
-                backgroundColor: "rgba(0,0,0,0.4)",
-              }}
-            >
-              <Pressable
-                accessible={false}
-                onPress={closeChoices}
-                style={{ flex: 1 }}
-              />
-              <View
-                style={{
-                  maxHeight: "80%",
-                  backgroundColor: colors.surface1,
-                  borderTopLeftRadius: 16,
-                  borderTopRightRadius: 16,
-                  padding: 16,
-                }}
-              >
-                <Text
-                  accessibilityRole="header"
-                  style={{
-                    color,
-                    fontSize: 16,
-                    fontWeight: "600",
-                    marginBottom: 8,
-                  }}
-                >
-                  {pickerTitle}
-                </Text>
-                <ScrollView keyboardShouldPersistTaps="handled">
-                  {pickerItems}
-                </ScrollView>
-              </View>
-            </View>
-          )}
+          {compactContent}
         </KeyboardAvoidingView>
       </SafeAreaView>
     </NativeModal>

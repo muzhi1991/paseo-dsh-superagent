@@ -1,10 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  SafeAreaView,
-} from "react-native";
 import type {
   PluginClientContext,
   PluginSidebarItemProps,
@@ -15,7 +9,7 @@ import { Panel } from "./client/panel";
 import { ConnectionSettings } from "./client/settings";
 
 function Sidebar(props: PluginSidebarItemProps) {
-  const { currentScreen, openScreen, layout, theme } = props;
+  const { currentScreen, openScreen, layout } = props;
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
   return (
@@ -30,26 +24,15 @@ function Sidebar(props: PluginSidebarItemProps) {
         }
       />
       {open && (
-        <Modal visible presentationStyle="fullScreen" onRequestClose={close}>
-          <SafeAreaView
-            style={{ flex: 1, backgroundColor: theme.colors.surface0 }}
-          >
-            <KeyboardAvoidingView
-              behavior={Platform.OS === "ios" ? "padding" : undefined}
-              style={{ flex: 1 }}
-            >
-              <Panel
-                {...props}
-                params={{}}
-                closePanel={close}
-                openLinkedAgent={(agentId) => {
-                  close();
-                  openScreen({ screenId: "superagent", params: { agentId } });
-                }}
-              />
-            </KeyboardAvoidingView>
-          </SafeAreaView>
-        </Modal>
+        <Panel
+          {...props}
+          params={{}}
+          closePanel={close}
+          openLinkedAgent={(agentId) => {
+            close();
+            openScreen({ screenId: "superagent", params: { agentId } });
+          }}
+        />
       )}
     </>
   );

@@ -1,5 +1,9 @@
 import { useState, useRef } from "react";
 import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  SafeAreaView,
   View,
   Text,
   TextInput,
@@ -110,14 +114,17 @@ export function Panel(
       setBusy(false);
     }
   }
-  if (chat)
-    return (
-      <Router
-        {...props}
-        expected={result?.instance}
-        back={() => setChat(false)}
-      />
-    );
+  const sessionBack = useRef<(() => void) | null>(null);
+  const returnToPanel = () => setChat(false);
+  const conversation = chat && (
+    <Router
+      {...props}
+      embeddedBack={props.closePanel ? sessionBack : undefined}
+      expected={result?.instance}
+      back={returnToPanel}
+    />
+  );
+  if (chat && !props.closePanel) return conversation;
   const field = (
     <TextInput
       autoFocus={small && searching}
@@ -142,7 +149,7 @@ export function Panel(
       }}
     />
   );
-  return (
+  const content = (
     <Surface.Provider
       value={{
         theme,
@@ -160,6 +167,81 @@ export function Panel(
       >
         <View
           style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            width: "100%",
+            maxWidth: 960,
+            alignSelf: "center",
+            paddingHorizontal: small ? 12 : 24,
+            paddingTop: props.closePanel ? 0 : small ? 5 : 18,
+            minHeight: props.closePanel ? 54 : undefined,
+          }}
+        >
+          {props.closePanel && (
+            <Action theme={theme} label="返回 Paseo" onPress={props.closePanel}>
+              <Icon name="ArrowLeft" size={20} color={colors.foreground} />
+            </Action>
+          )}
+          <Text
+            numberOfLines={1}
+            style={{
+              flex: 1,
+              color: colors.foreground,
+              fontWeight: "600",
+              fontSize: props.closePanel ? 16 : 15,
+            }}
+          >
+            {props.closePanel ? "DSH Superagent" : "Superagent"}
+          </Text>
+          {chat ? (
+            <Action
+              theme={theme}
+              onPress={returnToPanel}
+              label="返回 Superagent"
+            >
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
+              >
+                <Icon name="CornerUpLeft" size={15} color={colors.foreground} />
+                <Text
+                  style={{
+                    color: colors.foreground,
+                    fontSize: 13,
+                    fontWeight: "500",
+                  }}
+                >
+                  返回面板
+                </Text>
+              </View>
+            </Action>
+          ) : (
+            <>
+              {small ? (
+                <Action
+                  theme={theme}
+                  label="搜索"
+                  onPress={() => showSearch(!searching)}
+                >
+                  <Icon
+                    name="Search"
+                    size={17}
+                    color={colors.foregroundMuted}
+                  />
+                </Action>
+              ) : (
+                field
+              )}
+              <Action theme={theme} onPress={() => setChat(true)}>
+                主 Session ↗
+              </Action>
+            </>
+          )}
+        </View>
+        {conversation}
+        <View
+          style={{
+            display: chat ? "none" : "flex",
             flex: 1,
             width: "100%",
             maxWidth: 960,
@@ -167,50 +249,6 @@ export function Panel(
             paddingHorizontal: small ? 12 : 24,
           }}
         >
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 6,
-              paddingTop: props.closePanel ? 0 : small ? 5 : 18,
-              minHeight: props.closePanel ? 54 : undefined,
-            }}
-          >
-            {props.closePanel && (
-              <Action
-                theme={theme}
-                label="返回 Paseo"
-                onPress={props.closePanel}
-              >
-                <Icon name="ArrowLeft" size={20} color={colors.foreground} />
-              </Action>
-            )}
-            <Text
-              numberOfLines={1}
-              style={{
-                flex: 1,
-                color: colors.foreground,
-                fontWeight: "600",
-                fontSize: props.closePanel ? 16 : 15,
-              }}
-            >
-              {props.closePanel ? "DSH Superagent" : "Superagent"}
-            </Text>
-            {small ? (
-              <Action
-                theme={theme}
-                label="搜索"
-                onPress={() => showSearch(!searching)}
-              >
-                <Icon name="Search" size={17} color={colors.foregroundMuted} />
-              </Action>
-            ) : (
-              field
-            )}
-            <Action theme={theme} onPress={() => setChat(true)}>
-              主 Session ↗
-            </Action>
-          </View>
           {searching && small && (
             <View style={{ flexDirection: "row", gap: 5 }}>
               {field}
@@ -357,5 +395,25 @@ export function Panel(
         )}
       </View>
     </Surface.Provider>
+  );
+  if (!props.closePanel) return content;
+  return (
+    <Modal
+      visible
+      presentationStyle="fullScreen"
+      onRequestClose={() => {
+        if (chat) (sessionBack.current ?? returnToPanel)();
+        else props.closePanel?.();
+      }}
+    >
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface0 }}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ flex: 1 }}
+        >
+          {content}
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
   );
 }
