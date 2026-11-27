@@ -17,6 +17,7 @@ const hash = (value: string) =>
 export async function dispatch({
   instance,
   requestId,
+  mode = "queue",
   text,
   receipts,
 }: RpcInput<typeof send>) {
@@ -57,7 +58,7 @@ export async function dispatch({
     const result = await rpc(c, "session/prompt", {
       request: {
         sessionId: id,
-        mode: "queue",
+        mode,
         requestId,
         content: [
           ...(text.trim() ? [{ type: "text", text }] : []),

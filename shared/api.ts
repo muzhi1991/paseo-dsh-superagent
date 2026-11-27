@@ -68,6 +68,7 @@ export const send = defineRpc({
   name: "router.send",
   input: target.extend({
     text: z.string().max(100000),
+    mode: z.enum(["queue", "steer"]).optional(),
     requestId: z.string().uuid(),
     receipts: z.array(z.string()).max(12),
   }),

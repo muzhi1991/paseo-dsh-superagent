@@ -17,6 +17,8 @@
 
 截图使用示例工单和对话。桌面和手机浏览器都可以用回形针添加文件或照片。Paseo 0.17.5 的原生 iOS 和 Android 客户端可以发文字、查看已有图片，上传附件请用浏览器。
 
+桌面版和宽屏网页的主会话跟随当前 Paseo 客户端「设置 → 聊天」里的发送偏好。默认 Enter 发送，Shift+Enter 换行。如果选择 ⌘/Ctrl+Enter 发送，单按 Enter 就能换行。使用 Enter 发送时，Router 忙碌期间按 ⌘/Ctrl+Enter 可以切换本条消息的投递方式：默认引导时改为排队，默认排队时改为引导。如果选择「中断」，插件会用 DSH 的引导模式投递消息。手机输入框保留回车换行，点箭头发送。
+
 ## 安装并连接
 
 需要 **Paseo 0.17.5 或更高版本**，以及已安装 Superagent 的 DSH Web 实例。首次配置时，先在 DSH Web 面板完成部署检查，确认能打开主会话。[DSH Superagent 项目](https://github.com/deepseek-ai/dsh-superagent-prototype)

@@ -1,4 +1,5 @@
 import { ImageViewport } from "./image-viewport";
+import { enterDelivery, readSendPreferences, type Delivery } from "./send-keys";
 import { MobileFrame } from "./mobile-frame";
 import {
   useImperativeHandle,
@@ -152,7 +153,7 @@ export function Router({
       setWindow((w) => merge(w, page, true));
     });
   }
-  async function submit() {
+  async function submit(mode: Delivery) {
     const receipts = files.map((f) => f.id),
       key = JSON.stringify([instance, draft, receipts]);
     if (retry.current.key !== key) retry.current = { key, id: requestId() };
@@ -160,6 +161,7 @@ export function Router({
       !(await send({
         instance,
         requestId: retry.current.id,
+        mode,
         text: draft,
         receipts,
       }))
@@ -184,6 +186,11 @@ export function Router({
   }
   const colors = theme.colors;
   const compact = layout.compact;
+  const desktopKeys = Platform.OS === "web" && !compact;
+  const canSend = !disabled && (!!draft.trim() || files.length > 0);
+  function sendDraft(mode: Delivery) {
+    if (canSend && !lock.current) void run(() => submit(mode));
+  }
   const closeChoices = () => {
     setChoices([]);
     setChosen(null);
@@ -453,6 +460,24 @@ export function Router({
             )}
             <TextInput
               multiline
+              onKeyPress={
+                desktopKeys
+                  ? (e) => {
+                      const key = e.nativeEvent as typeof e.nativeEvent & {
+                        repeat?: boolean;
+                      };
+                      if (key.key !== "Enter") return;
+                      const mode = enterDelivery(
+                        key,
+                        readSendPreferences(),
+                        !!data?.busy,
+                      );
+                      if (!mode) return;
+                      e.preventDefault();
+                      if (!key.repeat) sendDraft(mode);
+                    }
+                  : undefined
+              }
               editable={!pending && !changed}
               accessibilityLabel="给 Router 发送消息"
               placeholder="发送消息…"
@@ -558,9 +583,17 @@ export function Router({
               )}
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={data?.busy ? "排队发送" : "发送"}
-                disabled={disabled || (!draft.trim() && !files.length)}
-                onPress={() => run(submit)}
+                accessibilityLabel={
+                  data?.busy && !desktopKeys ? "排队发送" : "发送"
+                }
+                disabled={!canSend}
+                onPress={() =>
+                  sendDraft(
+                    desktopKeys && data?.busy
+                      ? readSendPreferences().behavior
+                      : "queue",
+                  )
+                }
                 style={{
                   width: 34,
                   height: 34,
@@ -569,8 +602,7 @@ export function Router({
                   alignItems: "center",
                   justifyContent: "center",
                   backgroundColor: colors.foreground,
-                  opacity:
-                    disabled || (!draft.trim() && !files.length) ? 0.38 : 1,
+                  opacity: canSend ? 1 : 0.38,
                 }}
               >
                 <Icon name="ArrowUp" size={19} color={colors.surface0} />
