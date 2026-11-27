@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Switch, TextInput, View } from "react-native";
-import { Chips, Copy, Fold, Link, useSurface } from "./surface";
+import { ChoiceBar, ChoiceField, SuggestedInput } from "./settings-controls";
+import { Copy, Link, useSurface } from "./surface";
 import { str } from "./records";
 
 export type Field = {
@@ -28,14 +29,127 @@ type Props = {
   labels?: Record<string, string>;
   saved?: any;
   dirty?: boolean;
+  rowCell?: boolean;
 };
-const cellNames: Record<string, string> = {
-  listedUnaddressed: "名单内 · 未点名",
-  unlistedAddressed: "名单外 · 已点名",
-  unlistedUnaddressed: "名单外 · 未点名",
+const cellNames = {
+  listedUnaddressed: "名单内 · 未 @",
+  unlistedAddressed: "名单外 · 点名智能体",
+  unlistedUnaddressed: "名单外 · 未 @",
 };
+type Cell = keyof typeof cellNames;
+const cells = Object.keys(cellNames) as Cell[];
+function Admission({
+  rows,
+  labels,
+  table,
+  change,
+}: {
+  rows: any[];
+  labels: Record<string, string>;
+  table: Record<string, Partial<Record<Cell, string>>>;
+  change: (v: Record<string, Partial<Record<Cell, string>>>) => void;
+}) {
+  const {
+      theme: { colors },
+      compact,
+    } = useSurface(),
+    [width, measure] = useState(0),
+    stack = width ? width < 455 : compact;
+  return (
+    <View
+      onLayout={(e) => measure(e.nativeEvent.layout.width)}
+      style={{ gap: 4 }}
+    >
+      {!stack && (
+        <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6 }}>
+          <View style={{ flex: 1 }}>
+            <Copy quiet>接收范围</Copy>
+          </View>
+          {cells.map((k) => (
+            <View key={k} style={{ flex: 1 }}>
+              <Copy quiet>{cellNames[k].split(" · ")[0]}</Copy>
+              <Copy quiet>{cellNames[k].split(" · ")[1]}</Copy>
+            </View>
+          ))}
+        </View>
+      )}
+      {rows.map((r) => {
+        const title = labels[r.id] || str(r.label);
+        return (
+          <View
+            key={r.id}
+            style={{
+              flexDirection: stack ? "column" : "row",
+              gap: 6,
+              borderTopWidth: 0.5,
+              borderColor: colors.border,
+              paddingVertical: 6,
+              alignItems: stack ? "stretch" : "center",
+            }}
+          >
+            <View style={{ flex: stack ? undefined : 1, minWidth: 0 }}>
+              <Copy>{title}</Copy>
+              {!!str(r.note) && <Copy quiet>{str(r.note)}</Copy>}
+            </View>
+            {cells.map((k) => {
+              if (stack && !r.cells[k]) return null;
+              const active =
+                table[r.id]?.[k] ??
+                (k === "listedUnaddressed" ? "inferred" : "ignore");
+              return (
+                <View
+                  key={k}
+                  style={{
+                    minWidth: 0,
+                    flex: stack ? undefined : 1,
+                    flexDirection: stack ? "row" : "column",
+                    alignItems: stack ? "center" : "stretch",
+                    gap: 6,
+                  }}
+                >
+                  {stack && (
+                    <View style={{ flex: 1 }}>
+                      <Copy quiet>{cellNames[k]}</Copy>
+                    </View>
+                  )}
+                  {r.cells[k] ? (
+                    <View style={{ flex: stack ? 1 : undefined, minWidth: 0 }}>
+                      <ChoiceField
+                        label={title + " · " + cellNames[k]}
+                        items={{
+                          ...(k === "unlistedAddressed"
+                            ? { explicit: "明确的请求" }
+                            : {}),
+                          inferred: "推断的候选",
+                          ignore: "忽略",
+                        }}
+                        active={active}
+                        choose={(v) =>
+                          change({
+                            ...table,
+                            [r.id]: { ...table[r.id], [k]: v },
+                          })
+                        }
+                      />
+                      {k === "unlistedAddressed" && active === "explicit" && (
+                        <Copy quiet>此范围内任何人点名都可直接发起工作。</Copy>
+                      )}
+                    </View>
+                  ) : (
+                    <Copy quiet>—</Copy>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
 function Policies({ sources = [], value = {}, change, dirty, saved }: Props) {
-  const { confirm } = useSurface(),
+  const panelId = useId(),
+    { confirm } = useSurface(),
     [selected, setSelected] = useState(""),
     available = sources.filter((s) => s.installed && s.policy);
   const s = available.find((s) => s.id === selected) || available[0];
@@ -45,79 +159,70 @@ function Policies({ sources = [], value = {}, change, dirty, saved }: Props) {
       change({ ...value, [s.id]: { ...part, [key]: v } });
   return (
     <View style={{ gap: 8 }}>
-      <Chips
-        items={Object.fromEntries(available.map((s) => [s.id, str(s.title)]))}
-        active={s.id}
-        choose={setSelected}
-      />
-      {s.policy.fields.map((f: Field) => (
-        <View key={f.key}>
-          <Copy>{str(f.label)}</Copy>
-          <FieldControl
-            field={f}
-            labels={s.labels}
-            sourceId={s.id}
-            saved={saved?.[s.id]?.[f.key]}
-            value={part[f.key]}
-            change={(v) => update(f.key, v)}
-          />
-        </View>
-      ))}
-      {s.policy.sync && (
-        <>
-          {s.policy.sync.ready && !dirty ? (
-            <Link
-              onPress={() =>
-                confirm("同步来源名单并更新策略？", {
-                  kind: "sync-policy",
-                  id: s.id,
-                })
-              }
-            >
-              {str(s.policy.sync.label)}
-            </Link>
-          ) : (
-            <Copy quiet>
-              {str(s.policy.sync.label) +
-                (dirty ? "（请先保存或放弃策略更改）" : "（尚未配置同步来源）")}
-            </Copy>
-          )}
-        </>
+      {available.length > 1 && (
+        <ChoiceBar
+          label="在各来源上"
+          appearance="underline"
+          panelId={panelId}
+          items={Object.fromEntries(available.map((s) => [s.id, str(s.title)]))}
+          active={s.id}
+          choose={setSelected}
+        />
       )}
-      <Copy bold>{s.policy.rows ? "准入" : "明确请求"}</Copy>
-      <Copy quiet>{str(s.policy.explicit)}</Copy>
-      {s.policy.rows?.map((r: any) => (
-        <View key={r.id} style={{ gap: 4 }}>
-          <Copy>{s.labels[r.id] || str(r.label)}</Copy>
-          <Copy quiet>{str(r.note)}</Copy>
-          {Object.keys(r.cells)
-            .filter((k) => r.cells[k])
-            .map((k) => (
-              <View key={k}>
-                <Copy quiet>{cellNames[k]}</Copy>
-                <Chips
-                  active={
-                    part.admission?.[r.id]?.[k] ||
-                    (k === "listedUnaddressed" ? "inferred" : "ignore")
-                  }
-                  items={{
-                    ignore: "忽略",
-                    inferred: "研判",
-                    ...(k === "unlistedAddressed"
-                      ? { explicit: "明确请求" }
-                      : {}),
-                  }}
-                  choose={(v) =>
-                    update("admission", {
-                      ...part.admission,
-                      [r.id]: { ...part.admission?.[r.id], [k]: v },
-                    })
-                  }
-                />
-              </View>
-            ))}
-        </View>
-      ))}
+      <View
+        key={s.id}
+        nativeID={panelId}
+        role="tabpanel"
+        accessibilityLabel={str(s.title)}
+        style={{ gap: 8 }}
+      >
+        {s.policy.fields.map((f: Field) => (
+          <View key={f.key}>
+            <Copy>{str(f.label)}</Copy>
+            <FieldControl
+              field={f}
+              labels={s.labels}
+              sourceId={s.id}
+              saved={saved?.[s.id]?.[f.key]}
+              value={part[f.key]}
+              change={(v) => update(f.key, v)}
+            />
+          </View>
+        ))}
+        {s.policy.sync && (
+          <>
+            {s.policy.sync.ready && !dirty ? (
+              <Link
+                onPress={() =>
+                  confirm("同步来源名单并更新策略？", {
+                    kind: "sync-policy",
+                    id: s.id,
+                  })
+                }
+              >
+                {str(s.policy.sync.label)}
+              </Link>
+            ) : (
+              <Copy quiet>
+                {str(s.policy.sync.label) +
+                  (dirty
+                    ? "（请先保存或放弃策略更改）"
+                    : "（尚未配置同步来源）")}
+              </Copy>
+            )}
+          </>
+        )}
+        <Copy bold>{s.policy.rows ? "准入" : "明确请求"}</Copy>
+        <Copy quiet>{str(s.policy.explicit)}</Copy>
+        {s.policy.rows && (
+          <Admission
+            rows={s.policy.rows}
+            labels={s.labels}
+            table={part.admission || {}}
+            change={(v) => update("admission", v)}
+          />
+        )}
+      </View>
     </View>
   );
 }
@@ -277,6 +382,7 @@ function Rows({
                 ) : (
                   <FieldControl
                     field={c}
+                    rowCell
                     value={r[c.key]}
                     labels={Object.fromEntries(
                       Object.entries(labels).filter(
@@ -347,22 +453,14 @@ function Model({ value, change, models }: Props) {
         return (
           <View key={k}>
             <Copy quiet>{label}</Copy>
-            <FieldControl
-              field={{ key: k, type: "text", label }}
-              value={value?.[k]}
-              change={put}
+            <SuggestedInput
+              label={label}
+              items={Object.fromEntries(
+                opts.map((x: any) => [x.id, x.name || x.id]),
+              )}
+              active={value?.[k] || ""}
+              choose={put}
             />
-            {!!opts.length && (
-              <Fold label={"选择" + label}>
-                <Chips
-                  items={Object.fromEntries(
-                    opts.map((x: any) => [x.id, x.name || x.id]),
-                  )}
-                  active={value?.[k] || ""}
-                  choose={put}
-                />
-              </Fold>
-            )}
           </View>
         );
       })}
@@ -387,25 +485,37 @@ export function FieldControl(props: Props) {
         onValueChange={change}
       />
     );
-  if (f.type === "select")
-    return (
-      <Chips
-        items={Object.fromEntries(
-          (f.options || []).map((o) => [o.value, str(o.label)]),
-        )}
-        active={String(value ?? f.options?.[0]?.value)}
-        choose={change}
+  if (f.type === "select") {
+    const args = {
+      label: name,
+      items: Object.fromEntries(
+        (f.options || []).map((o) => [o.value, str(o.label)]),
+      ),
+      active: String(value ?? f.options?.[0]?.value ?? ""),
+      choose: change,
+    };
+    return props.rowCell ? (
+      <ChoiceField {...args} />
+    ) : (
+      <ChoiceBar
+        {...args}
+        appearance="segments"
+        maxWidth={f.key === "mode" ? 420 : 240}
       />
     );
+  }
   if (f.choose && labels && Object.keys(labels).length)
     return (
-      <Fold label={labels[value] || value || str(f.choose)}>
-        <Chips
-          items={{ "": "清空", ...labels }}
-          active={value || ""}
-          choose={change}
-        />
-      </Fold>
+      <ChoiceField
+        label={name}
+        items={{
+          "": str(f.choose),
+          ...labels,
+          ...(value && !Object.hasOwn(labels, value) ? { [value]: value } : {}),
+        }}
+        active={value || ""}
+        choose={change}
+      />
     );
   return (
     <TextInput

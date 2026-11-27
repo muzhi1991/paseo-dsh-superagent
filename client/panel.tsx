@@ -213,6 +213,7 @@ export function Panel(props: PluginScreenProps) {
                 key={t}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: t === selected }}
+                aria-selected={t === selected}
                 onPress={() => {
                   setProblem("");
                   setStack([{ page: t }]);

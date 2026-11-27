@@ -1,10 +1,9 @@
-import { useState } from "react";
-import { TextInput, View } from "react-native";
+import { useId, useState } from "react";
+import { Pressable, Text, TextInput, View } from "react-native";
 import { useRpc } from "@getpaseo/plugin/client";
 import { useQuery } from "@tanstack/react-query";
 import { previewPrompts, promptVersions } from "../shared/supervision";
 import {
-  Chips,
   Copy,
   Fold,
   Link,
@@ -13,6 +12,7 @@ import {
   useSurface,
   useSettingsDraft,
 } from "./surface";
+import { ChoiceBar, ChoiceField } from "./settings-controls";
 import { errorText } from "./common";
 import { when } from "./records";
 const sections: Record<string, string> = {
@@ -176,26 +176,41 @@ export function Prompts({ v, instance }: { v: any; instance: string }) {
     padding: 9,
     fontSize: 13,
   };
+  const viewsId = useId();
+  const navItem = (id: string, label: string) => (
+    <Pressable
+      key={id}
+      accessibilityRole="button"
+      accessibilityState={{ selected: id === key }}
+      onPress={() => select(id)}
+      style={{
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        minHeight: 32,
+        borderRadius: 8,
+        justifyContent: "center",
+        backgroundColor: id === key ? colors.surface2 : "transparent",
+      }}
+    >
+      <Text
+        style={{
+          fontSize: 13,
+          color: id === key ? colors.foreground : colors.foregroundMuted,
+          fontWeight: id === key ? "500" : "400",
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
   const nav = (
     <View style={{ gap: 3 }}>
       <Copy bold>团队约定</Copy>
-      {Object.entries(sections).map(([id, name]) => (
-        <Link key={id} onPress={() => select(id)}>
-          {(id === key ? "▸ " : "") + name}
-        </Link>
-      ))}
+      {Object.entries(sections).map(([id, name]) => navItem(id, name))}
       <Copy bold>内置段落</Copy>
-      {v.parts.map((p: any) => (
-        <Link key={p.key} onPress={() => select(p.key)}>
-          {(key === p.key ? "▸ " : "") + (partNames[p.key] || p.key)}
-        </Link>
-      ))}
+      {v.parts.map((p: any) => navItem(p.key, partNames[p.key] || p.key))}
       <Copy bold>技能</Copy>
-      {Object.keys(config.skills).map((k) => (
-        <Link key={k} onPress={() => select("user/" + k)}>
-          {k}
-        </Link>
-      ))}
+      {Object.keys(config.skills).map((k) => navItem("user/" + k, k))}
       <TextInput
         accessibilityLabel="新技能名称"
         placeholder="新技能名称"
@@ -210,190 +225,211 @@ export function Prompts({ v, instance }: { v: any; instance: string }) {
   return (
     <Section name="提示词">
       <Copy quiet>{"团队提示词 · 版本 " + rev}</Copy>
-      <Chips
+      <ChoiceBar
+        label="查看方式"
+        appearance="underline"
+        panelId={viewsId}
         items={{ edit: "编辑", full: "完整提示词", history: "历史" }}
         active={tab}
         choose={setTab}
       />
-      {tab === "edit" && (
-        <View style={{ flexDirection: compact ? "column" : "row", gap: 12 }}>
-          {compact ? (
-            <Fold key={key} label={"选择段落 · " + shownName}>
-              {nav}
-            </Fold>
-          ) : (
-            <View style={{ width: 155 }}>{nav}</View>
-          )}
-          <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
-            <Copy bold>{shownName}</Copy>
-            <Copy quiet>
-              {part?.roles?.length === 1
-                ? part.roles[0] === "worker"
-                  ? "执行器读取"
-                  : "主 Session 读取"
-                : !team && !part
-                  ? "按需载入此技能"
-                  : "主 Session 和执行器读取"}
-            </Copy>
-            {!!part?.placeholders?.length && (
-              <Copy quiet>{"模板占位符：" + part.placeholders.join("、")}</Copy>
+      <View
+        nativeID={viewsId}
+        role="tabpanel"
+        accessibilityLabel={
+          { edit: "编辑", full: "完整提示词", history: "历史" }[tab]
+        }
+        style={{ gap: 6 }}
+      >
+        {tab === "edit" && (
+          <View style={{ flexDirection: compact ? "column" : "row", gap: 12 }}>
+            {compact ? (
+              <Fold key={key} label={"选择段落 · " + shownName}>
+                {nav}
+              </Fold>
+            ) : (
+              <View style={{ width: 155 }}>{nav}</View>
             )}
-            {team && value !== v.defaults[key] && (
-              <Link onPress={() => putText(v.defaults[key])}>恢复默认段落</Link>
-            )}
-            <TextInput
-              accessibilityLabel="提示词正文"
-              value={value}
-              onChangeText={putText}
-              multiline
-              textAlignVertical="top"
-              autoCorrect={false}
-              style={{ ...inputStyle, minHeight: 175, maxHeight: 330 }}
-            />
-            {part && config.overrides?.[key] && (
-              <Link onPress={drop}>恢复内置文本</Link>
-            )}
-            {!part && !team && <Link onPress={drop}>移除技能</Link>}
-          </View>
-        </View>
-      )}
-      {tab === "full" && (
-        <>
-          {preview.error ? (
-            <Copy>{errorText(preview.error)}</Copy>
-          ) : !preview.data ? (
-            <Copy quiet>正在生成预览…</Copy>
-          ) : (
-            <>
-              <Chips
-                items={{
-                  orchestrator: "主 Session",
-                  worker: "执行器",
-                  ...Object.fromEntries(
-                    Object.keys(preview.data.skills).map((k) => [
-                      "skill/" + k,
-                      k,
-                    ]),
-                  ),
-                }}
-                active={role}
-                choose={setRole}
-              />
-              <Chips
-                items={{
-                  full: "全文",
-                  saved: "与已保存版本比较",
-                  defaults: "与默认版本比较",
-                }}
-                active={compare}
-                choose={setCompare}
-              />
-              {(role === "orchestrator" || role === "worker"
-                ? preview.data.parts?.[role] || [
-                    {
-                      name: role,
-                      text: preview.data[role],
-                      kind: "generated",
-                      key: undefined,
-                      heading: undefined,
-                    },
-                  ]
-                : [
-                    {
-                      name: role,
-                      text: preview.data.skills[role.slice(5)] || "",
-                      kind: "skill",
-                      key: role,
-                      heading: undefined,
-                    },
-                  ]
-              ).map((p) => {
-                const source = p.key || p.name,
-                  label = sections[source] || partNames[source] || source,
-                  entry = v.parts.find((x: any) => x.key === source),
-                  baseline =
-                    compare === "saved" ? v.current.config : v.defaults;
-                const base =
-                  p.kind === "generated"
-                    ? undefined
-                    : entry
-                      ? (baseline.overrides?.[source]?.text ?? entry.text)
-                      : p.kind === "skill"
-                        ? baseline.skills[source.slice(5)] || ""
-                        : p.heading && baseline[p.name]
-                          ? p.heading + "\n" + baseline[p.name]
-                          : baseline[p.name] || "";
-                return (
-                  <View key={p.name} style={{ gap: 3 }}>
-                    <Copy bold>{label}</Copy>
-                    <Copy>
-                      {compare === "full" || base === undefined
-                        ? p.text
-                        : base === p.text
-                          ? "内容相同"
-                          : diffText(base, p.text)}
-                    </Copy>
-                    {(entry || sections[p.name] || p.kind === "skill") && (
-                      <Link
-                        onPress={() =>
-                          select(
-                            entry
-                              ? entry.key
-                              : p.kind === "skill"
-                                ? "user/" + p.name.slice(5)
-                                : p.name,
-                          )
-                        }
-                      >
-                        编辑来源
-                      </Link>
-                    )}
-                  </View>
-                );
-              })}
-            </>
-          )}
-        </>
-      )}
-      {tab === "history" && (
-        <>
-          <Copy quiet>载入历史版本会替换当前草稿，保存后生效。</Copy>
-          {[...v.revisions, ...older].map((r: any) => (
-            <View key={r.revision}>
-              <RecordLine
-                title={"版本 " + r.revision}
-                body={r.changed
-                  ?.map((k: string) => sections[k] || partNames[k] || k)
-                  .join("、")}
-                meta={when(r.savedAt)}
-              />
-              {!loading && (
-                <Link onPress={() => void loadVersion(r.revision)}>
-                  载入此版本
+            <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+              <Copy bold>{shownName}</Copy>
+              <Copy quiet>
+                {part?.roles?.length === 1
+                  ? part.roles[0] === "worker"
+                    ? "执行器读取"
+                    : "主 Session 读取"
+                  : !team && !part
+                    ? "按需载入此技能"
+                    : "主 Session 和执行器读取"}
+              </Copy>
+              {!!part?.placeholders?.length && (
+                <Copy quiet>
+                  {"模板占位符：" + part.placeholders.join("、")}
+                </Copy>
+              )}
+              {team && value !== v.defaults[key] && (
+                <Link onPress={() => putText(v.defaults[key])}>
+                  恢复默认段落
                 </Link>
               )}
+              <TextInput
+                accessibilityLabel="提示词正文"
+                value={value}
+                onChangeText={putText}
+                multiline
+                textAlignVertical="top"
+                autoCorrect={false}
+                style={{ ...inputStyle, minHeight: 175, maxHeight: 330 }}
+              />
+              {part && config.overrides?.[key] && (
+                <Link onPress={drop}>恢复内置文本</Link>
+              )}
+              {!part && !team && <Link onPress={drop}>移除技能</Link>}
             </View>
-          ))}
-          {!loading &&
-            (offset === undefined ? v.next_offset : offset) != null && (
-              <Link onPress={() => void more()}>更早的版本</Link>
+          </View>
+        )}
+        {tab === "full" && (
+          <>
+            {preview.error ? (
+              <Copy>{errorText(preview.error)}</Copy>
+            ) : !preview.data ? (
+              <Copy quiet>正在生成预览…</Copy>
+            ) : (
+              <>
+                <View style={{ maxWidth: 320 }}>
+                  <ChoiceField
+                    label="预览对象"
+                    items={{
+                      orchestrator: "主 Session",
+                      worker: "执行器",
+                      ...Object.fromEntries(
+                        Object.keys(preview.data.skills).map((k) => [
+                          "skill/" + k,
+                          k,
+                        ]),
+                      ),
+                    }}
+                    active={role}
+                    choose={setRole}
+                  />
+                </View>
+                <ChoiceBar
+                  label="比较方式"
+                  appearance="segments"
+                  items={{
+                    full: "全文",
+                    saved: "与已保存版本比较",
+                    defaults: "与默认版本比较",
+                  }}
+                  active={compare}
+                  choose={setCompare}
+                />
+                {(role === "orchestrator" || role === "worker"
+                  ? preview.data.parts?.[role] || [
+                      {
+                        name: role,
+                        text: preview.data[role],
+                        kind: "generated",
+                        key: undefined,
+                        heading: undefined,
+                      },
+                    ]
+                  : [
+                      {
+                        name: role,
+                        text: preview.data.skills[role.slice(5)] || "",
+                        kind: "skill",
+                        key: role,
+                        heading: undefined,
+                      },
+                    ]
+                ).map((p) => {
+                  const source = p.key || p.name,
+                    label = sections[source] || partNames[source] || source,
+                    entry = v.parts.find((x: any) => x.key === source),
+                    baseline =
+                      compare === "saved" ? v.current.config : v.defaults;
+                  const base =
+                    p.kind === "generated"
+                      ? undefined
+                      : entry
+                        ? (baseline.overrides?.[source]?.text ?? entry.text)
+                        : p.kind === "skill"
+                          ? baseline.skills[source.slice(5)] || ""
+                          : p.heading && baseline[p.name]
+                            ? p.heading + "\n" + baseline[p.name]
+                            : baseline[p.name] || "";
+                  return (
+                    <View key={p.name} style={{ gap: 3 }}>
+                      <Copy bold>{label}</Copy>
+                      <Copy>
+                        {compare === "full" || base === undefined
+                          ? p.text
+                          : base === p.text
+                            ? "内容相同"
+                            : diffText(base, p.text)}
+                      </Copy>
+                      {(entry || sections[p.name] || p.kind === "skill") && (
+                        <Link
+                          onPress={() =>
+                            select(
+                              entry
+                                ? entry.key
+                                : p.kind === "skill"
+                                  ? "user/" + p.name.slice(5)
+                                  : p.name,
+                            )
+                          }
+                        >
+                          编辑来源
+                        </Link>
+                      )}
+                    </View>
+                  );
+                })}
+              </>
             )}
-          <Link
-            onPress={() => {
-              edit(v.defaults);
-              select("communication");
-            }}
-          >
-            载入默认配置
-          </Link>
-          <Copy bold>Session 最近使用的版本</Copy>
-          {v.sessions?.map((x: any) => (
-            <Copy key={x.sessionId} quiet>
-              {x.sessionId + " · 版本 " + x.revision}
-            </Copy>
-          ))}
-        </>
-      )}
+          </>
+        )}
+        {tab === "history" && (
+          <>
+            <Copy quiet>载入历史版本会替换当前草稿，保存后生效。</Copy>
+            {[...v.revisions, ...older].map((r: any) => (
+              <View key={r.revision}>
+                <RecordLine
+                  title={"版本 " + r.revision}
+                  body={r.changed
+                    ?.map((k: string) => sections[k] || partNames[k] || k)
+                    .join("、")}
+                  meta={when(r.savedAt)}
+                />
+                {!loading && (
+                  <Link onPress={() => void loadVersion(r.revision)}>
+                    载入此版本
+                  </Link>
+                )}
+              </View>
+            ))}
+            {!loading &&
+              (offset === undefined ? v.next_offset : offset) != null && (
+                <Link onPress={() => void more()}>更早的版本</Link>
+              )}
+            <Link
+              onPress={() => {
+                edit(v.defaults);
+                select("communication");
+              }}
+            >
+              载入默认配置
+            </Link>
+            <Copy bold>Session 最近使用的版本</Copy>
+            {v.sessions?.map((x: any) => (
+              <Copy key={x.sessionId} quiet>
+                {x.sessionId + " · 版本 " + x.revision}
+              </Copy>
+            ))}
+          </>
+        )}
+      </View>
       {!!error && <Copy>{error}</Copy>}
       {draft && (
         <View style={{ flexDirection: "row", gap: 10 }}>

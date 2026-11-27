@@ -121,7 +121,7 @@ function TextLabel({ title, count }: { title: string; count?: number }) {
     </View>
   );
 }
-export function Chips({
+export function FilterPills({
   items,
   active,
   choose,
@@ -149,17 +149,19 @@ export function Chips({
           accessibilityState={{ selected: active === k }}
           onPress={() => choose(k)}
           style={{
-            paddingHorizontal: 10,
-            paddingVertical: 5,
-            borderRadius: 15,
+            paddingHorizontal: 8,
+            paddingVertical: 2,
+            minHeight: 24,
+            justifyContent: "center",
+            borderRadius: 12,
             borderWidth: 1,
-            borderColor: active === k ? colors.accent : colors.surface2,
-            backgroundColor: active === k ? colors.surface2 : "transparent",
+            borderColor: active === k ? colors.border : "transparent",
+            backgroundColor: active === k ? colors.surface2 : colors.surface1,
           }}
         >
           <Text
             style={{
-              color: active === k ? colors.accent : colors.foregroundMuted,
+              color: active === k ? colors.foreground : colors.foregroundMuted,
               fontSize: 12,
             }}
           >

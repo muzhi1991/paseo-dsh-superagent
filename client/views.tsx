@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Icon } from "@getpaseo/plugin/client/ui";
 import { View, Text, Pressable, ScrollView } from "react-native";
 import {
-  Chips,
+  FilterPills,
   Copy,
   Fold,
   Link,
@@ -269,7 +269,7 @@ export function PageContents({
   const options = p === "来源" ? null : filters[p];
   const active = route.filter || (options ? Object.keys(options)[0] : "");
   const chips = options && (
-    <Chips
+    <FilterPills
       items={options}
       active={active}
       choose={(filter) => setRoute({ ...route, filter })}
