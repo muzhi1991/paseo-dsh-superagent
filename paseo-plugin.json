@@ -1,0 +1,6 @@
+{
+  "id": "paseo-dsh-superagent",
+  "name": "DSH Superagent",
+  "description": "通过 Paseo 查看 Superagent 工单并联系 Router 主会话",
+  "requirements": { "paseo": ">=0.17.5" }
+}

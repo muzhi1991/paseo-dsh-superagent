@@ -1,0 +1,1 @@
+Connect a Paseo host to a DSH Superagent deployment. Open DSH Superagent in the sidebar to review tickets and sources, follow decisions, and talk to the deployment’s Router. The connection settings page verifies the management API and tests access to the main session. Credentials stay on the daemon after configuration.
