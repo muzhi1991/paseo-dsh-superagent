@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  KeyboardAvoidingView,
+  Modal as NativeModal,
   Platform,
   Pressable,
+  SafeAreaView,
   ScrollView,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from "react-native";
 import { useRpc, type PluginScreenProps } from "@getpaseo/plugin/client";
@@ -61,6 +63,7 @@ export function Router({
   theme,
   host,
   expected,
+  layout,
   back,
 }: PluginScreenProps & { expected?: string; back: () => void }) {
   const history = useRpc(transcript),
@@ -159,14 +162,55 @@ export function Router({
     await q.refetch();
   }
   const colors = theme.colors;
-  const compact = useWindowDimensions().width < 680;
+  const compact = layout.compact;
   const closeChoices = () => {
     setChoices([]);
     setChosen(null);
   };
-  return (
+  const pickerTitle = chosen ? "推理强度" : "选择模型";
+  const pickerOpen = choices.length > 0;
+  const pickerItems = pickerOpen && (
+    <>
+      {chosen
+        ? [{ id: "", name: "默认" }, ...chosen.efforts].map((e) => (
+            <Action
+              key={e.id}
+              theme={theme}
+              disabled={pending}
+              selected={chosen.model === data?.model && e.id === data?.effort}
+              onPress={() => run(() => choose(chosen, e.id || undefined))}
+            >
+              {e.name}
+            </Action>
+          ))
+        : choices.map((m) => (
+            <Action
+              key={m.provider + "/" + m.model}
+              theme={theme}
+              disabled={pending}
+              selected={m.model === data?.model}
+              onPress={() =>
+                m.efforts.length ? setChosen(m) : run(() => choose(m))
+              }
+            >
+              {m.label}
+            </Action>
+          ))}
+      <Action theme={theme} onPress={closeChoices}>
+        取消
+      </Action>
+    </>
+  );
+  const conversation = (
     <ChatContext.Provider value={{ theme, hostId: host.id, instance, report }}>
-      <View style={{ flex: 1, backgroundColor: colors.surface0 }}>
+      <View
+        style={{ flex: 1, backgroundColor: colors.surface0 }}
+        accessibilityElementsHidden={compact && pickerOpen}
+        importantForAccessibility={
+          compact && pickerOpen ? "no-hide-descendants" : "auto"
+        }
+        aria-hidden={compact && pickerOpen}
+      >
         <View
           style={{
             flexDirection: "row",
@@ -183,9 +227,9 @@ export function Router({
             style={{
               flex: 1,
               minWidth: 0,
-              flexDirection: compact ? "column" : "row",
-              alignItems: compact ? "flex-start" : "center",
-              gap: compact ? 1 : 8,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
             }}
           >
             <Text
@@ -198,11 +242,13 @@ export function Router({
                 flexShrink: 1,
               }}
             >
-              {data?.title || "Router"}
+              {compact ? "DSH Superagent" : data?.title || "Router"}
             </Text>
-            <Text numberOfLines={1} style={{ color: muted, fontSize: 12 }}>
-              主 Session
-            </Text>
+            {!compact && (
+              <Text numberOfLines={1} style={{ color: muted, fontSize: 12 }}>
+                主 Session
+              </Text>
+            )}
           </View>
           <Action theme={theme} onPress={back} label="返回 Superagent">
             <View
@@ -281,46 +327,7 @@ export function Router({
             </Text>
           )}
         </ScrollView>
-        <Modal
-          title={chosen ? "推理强度" : "选择模型"}
-          open={choices.length > 0}
-          onOpenChange={(open) => {
-            if (!open) closeChoices();
-          }}
-        >
-          <Modal.Content>
-            {chosen
-              ? [{ id: "", name: "默认" }, ...chosen.efforts].map((e) => (
-                  <Action
-                    key={e.id}
-                    theme={theme}
-                    disabled={pending}
-                    selected={
-                      chosen.model === data?.model && e.id === data?.effort
-                    }
-                    onPress={() => run(() => choose(chosen, e.id || undefined))}
-                  >
-                    {e.name}
-                  </Action>
-                ))
-              : choices.map((m) => (
-                  <Action
-                    key={m.provider + "/" + m.model}
-                    theme={theme}
-                    disabled={pending}
-                    selected={m.model === data?.model}
-                    onPress={() =>
-                      m.efforts.length ? setChosen(m) : run(() => choose(m))
-                    }
-                  >
-                    {m.label}
-                  </Action>
-                ))}
-            <Action theme={theme} onPress={closeChoices}>
-              取消
-            </Action>
-          </Modal.Content>
-        </Modal>
+
         <View
           style={{
             width: "100%",
@@ -508,5 +515,78 @@ export function Router({
         </View>
       </View>
     </ChatContext.Provider>
+  );
+  return compact ? (
+    <NativeModal
+      visible
+      presentationStyle="fullScreen"
+      onRequestClose={pickerOpen ? closeChoices : back}
+    >
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface0 }}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ flex: 1 }}
+        >
+          {conversation}
+          {pickerOpen && (
+            <View
+              accessibilityViewIsModal
+              style={{
+                position: "absolute",
+                top: 0,
+                bottom: 0,
+                left: 0,
+                right: 0,
+                justifyContent: "flex-end",
+                backgroundColor: "rgba(0,0,0,0.4)",
+              }}
+            >
+              <Pressable
+                accessible={false}
+                onPress={closeChoices}
+                style={{ flex: 1 }}
+              />
+              <View
+                style={{
+                  maxHeight: "80%",
+                  backgroundColor: colors.surface1,
+                  borderTopLeftRadius: 16,
+                  borderTopRightRadius: 16,
+                  padding: 16,
+                }}
+              >
+                <Text
+                  accessibilityRole="header"
+                  style={{
+                    color,
+                    fontSize: 16,
+                    fontWeight: "600",
+                    marginBottom: 8,
+                  }}
+                >
+                  {pickerTitle}
+                </Text>
+                <ScrollView keyboardShouldPersistTaps="handled">
+                  {pickerItems}
+                </ScrollView>
+              </View>
+            </View>
+          )}
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </NativeModal>
+  ) : (
+    <>
+      {conversation}
+      <Modal
+        title={pickerTitle}
+        open={pickerOpen}
+        onOpenChange={(open) => {
+          if (!open) closeChoices();
+        }}
+      >
+        <Modal.Content>{pickerItems}</Modal.Content>
+      </Modal>
+    </>
   );
 }
