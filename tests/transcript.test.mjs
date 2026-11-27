@@ -176,3 +176,17 @@ test("a next-turn claim is attributed by message id and a tool step is never a f
   assert.equal(partial.id, 10);
   assert.equal(partial.start, undefined);
 });
+
+test("user transcript retains the DSH request id even when prompts have identical text", () => {
+  const { rows, add } = history();
+  for (const rpcId of ["first", "second", undefined]) {
+    add("user/message", {
+      source: { kind: "user", rpcId },
+      content: [{ type: "text", text: "继续" }],
+    });
+  }
+  assert.deepEqual(
+    projectEvents(rows, []).map((e) => e.requestId),
+    ["first", "second", undefined],
+  );
+});

@@ -134,6 +134,10 @@ export function projectEvents(
             ? {
                 ...base,
                 kind: "user",
+                requestId:
+                  typeof d.source?.rpcId === "string"
+                    ? d.source.rpcId
+                    : undefined,
                 text: textOf(d.content),
                 files: filesOf(d.content || []),
               }

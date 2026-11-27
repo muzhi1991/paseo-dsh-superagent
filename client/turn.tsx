@@ -20,7 +20,8 @@ import {
   type Turn,
   type TranscriptEvent,
 } from "../shared/transcript";
-import { errorText, type Theme } from "./common";
+import type { Outgoing } from "./outbox";
+import { Action, errorText, type Theme } from "./common";
 
 type ChatStyle = {
   theme: Theme;
@@ -254,11 +255,11 @@ function ImageSlot({ file, seq }: { file: Attachment; seq: number }) {
     </View>
   );
 }
-function FileCard({ file, seq }: { file: Attachment; seq: number }) {
+function FileCard({ file, seq }: { file: Attachment; seq?: number }) {
   const {
     theme: { colors: c },
   } = useChat();
-  if (file.kind === "image" && file.id)
+  if (file.kind === "image" && file.id && seq !== undefined)
     return <ImageSlot file={file} seq={seq} />;
   const ext = file.name.includes(".")
       ? file.name.split(".").pop()?.toUpperCase()
@@ -355,6 +356,76 @@ function Footer({
     </View>
   );
 }
+function UserBubble({ text }: { text: string }) {
+  const {
+    theme: { colors: c },
+  } = useChat();
+  return (
+    <View
+      style={{
+        borderRadius: 16,
+        paddingVertical: 9,
+        paddingHorizontal: 15,
+        maxWidth: "88%",
+        backgroundColor: "rgba(105,160,245,0.16)",
+      }}
+    >
+      <Text
+        selectable
+        style={{ fontSize: 15, lineHeight: 23, color: c.foreground }}
+      >
+        {text}
+      </Text>
+    </View>
+  );
+}
+
+export function OutgoingMessage({
+  message,
+  retry,
+  disabled,
+}: {
+  message: Outgoing;
+  retry: () => void;
+  disabled: boolean;
+}) {
+  const { theme } = useChat();
+  const status =
+    message.state === "sending"
+      ? "发送中…"
+      : message.state === "unconfirmed"
+        ? "未确认送达"
+        : message.mode === "queue"
+          ? "已排队"
+          : "已发送";
+  return (
+    <View style={{ alignItems: "flex-end", gap: 6, marginVertical: 10 }}>
+      {message.files.map((f) => (
+        <FileCard key={f.id} file={{ kind: "file", name: f.name }} />
+      ))}
+      {!!message.text && <UserBubble text={message.text} />}
+      <Text
+        accessibilityLiveRegion="polite"
+        style={{ fontSize: 12, color: theme.colors.foregroundMuted }}
+      >
+        {status}
+      </Text>
+      {message.error && (
+        <>
+          <Text
+            selectable
+            style={{ color: theme.colors.statusDanger, fontSize: 12 }}
+          >
+            {message.error}
+          </Text>
+          <Action theme={theme} onPress={retry} disabled={disabled}>
+            重试发送
+          </Action>
+        </>
+      )}
+    </View>
+  );
+}
 function Message({
   event,
   user = false,
@@ -366,9 +437,6 @@ function Message({
   footer?: boolean;
   tokens?: number;
 }) {
-  const {
-    theme: { colors: c },
-  } = useChat();
   return (
     <View
       style={{ alignItems: user ? "flex-end" : "stretch", gap: 6, minWidth: 0 }}
@@ -376,22 +444,7 @@ function Message({
       <EventFiles event={event} />
       {!!event.text &&
         (user ? (
-          <View
-            style={{
-              borderRadius: 16,
-              paddingVertical: 9,
-              paddingHorizontal: 15,
-              maxWidth: "88%",
-              backgroundColor: "rgba(105,160,245,0.16)",
-            }}
-          >
-            <Text
-              selectable
-              style={{ fontSize: 15, lineHeight: 23, color: c.foreground }}
-            >
-              {event.text}
-            </Text>
-          </View>
+          <UserBubble text={event.text} />
         ) : (
           <Markdown>{event.text}</Markdown>
         ))}

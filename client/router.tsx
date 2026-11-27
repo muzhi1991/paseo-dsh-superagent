@@ -34,7 +34,8 @@ import {
   groupTurns,
   type TranscriptEvent,
 } from "../shared/transcript";
-import { ChatContext, compactNumber, TurnView } from "./turn";
+import { useOutbox, type Outgoing } from "./outbox";
+import { ChatContext, compactNumber, OutgoingMessage, TurnView } from "./turn";
 
 type History = RpcOutput<typeof transcript>;
 type Window = { instance: string; events: TranscriptEvent[]; older?: number };
@@ -160,7 +161,7 @@ export function Router({
   });
   const choices = models.data || [];
   const lock = useRef(false),
-    retry = useRef({ key: "", id: "" }),
+    scrollOnSend = useRef(false),
     log = useRef<ScrollView>(null),
     following = useRef(true);
   const disabled = pending || changed || !q.data || !!q.error;
@@ -185,6 +186,7 @@ export function Router({
     if (data) setWindow((w) => merge(w, data));
   }, [data]);
   const visible = window ?? data;
+  const outbox = useOutbox(host.id, instance, visible?.events);
   const [positioned, setPositioned] = useState(false);
   const [images] = useState(() => new ImageViewport());
   const logHeight = useRef(0);
@@ -210,25 +212,21 @@ export function Router({
       setWindow((w) => merge(w, page, true));
     });
   }
-  async function submit(mode: Delivery) {
-    const receipts = files.map((f) => f.id),
-      key = JSON.stringify([instance, draft, receipts]);
-    if (retry.current.key !== key) retry.current = { key, id: requestId() };
-    if (
-      !(await send({
+  async function deliver(message: Outgoing) {
+    try {
+      const accepted = await send({
         instance,
-        requestId: retry.current.id,
-        mode,
-        text: draft,
-        receipts,
-      }))
-    )
-      throw Error("DSH 未确认接收，请重试");
-    retry.current = { key: "", id: "" };
-    setDraft("");
-    setFiles([]);
-    following.current = true;
-    await q.refetch();
+        requestId: message.id,
+        mode: message.mode,
+        text: message.text,
+        receipts: message.files.map((f) => f.id),
+      });
+      if (!accepted) throw Error("DSH 未确认接收");
+      outbox.status(message.id, "accepted");
+    } catch (e) {
+      outbox.status(message.id, "unconfirmed", errorText(e));
+    }
+    void q.refetch();
   }
   async function choose(m: Selection, effort?: string) {
     await select({
@@ -246,7 +244,23 @@ export function Router({
   const desktopKeys = Platform.OS === "web" && !compact;
   const canSend = !disabled && (!!draft.trim() || files.length > 0);
   function sendDraft(mode: Delivery) {
-    if (canSend && !lock.current) void run(() => submit(mode));
+    if (!canSend || lock.current) return;
+    void run(() => {
+      const message: Outgoing = {
+        id: requestId(),
+        mode,
+        text: draft,
+        files,
+        state: "sending",
+      };
+      following.current = true;
+      scrollOnSend.current = true;
+      outbox.append(message);
+      setDraft("");
+      setFiles([]);
+      log.current?.scrollToEnd({ animated: false });
+      return deliver(message);
+    });
   }
   const closeChoices = () => {
     setMenu(null);
@@ -448,6 +462,10 @@ export function Router({
           onContentSizeChange={(_, height) => {
             scrollMetrics.current.height = height;
             images.layoutChanged();
+            if (scrollOnSend.current) {
+              scrollOnSend.current = false;
+              log.current?.scrollToEnd({ animated: false });
+            }
             if (prependHeight.current !== null) {
               const delta = height - prependHeight.current;
               prependHeight.current = null;
@@ -503,12 +521,31 @@ export function Router({
                   card={data?.actionCards?.[t.id]}
                 />
               ))}
+            {!changed &&
+              outbox.messages.map((message) => (
+                <OutgoingMessage
+                  key={message.id}
+                  message={message}
+                  disabled={disabled}
+                  retry={() =>
+                    void run(() => {
+                      outbox.status(message.id, "sending");
+                      return deliver(message);
+                    })
+                  }
+                />
+              ))}
             {q.isPending && <Loading theme={theme} />}
-            {!turns.length && !q.isPending && !q.error && (
-              <Text style={{ textAlign: "center", color: muted, padding: 20 }}>
-                还没有对话
-              </Text>
-            )}
+            {!turns.length &&
+              !outbox.messages.length &&
+              !q.isPending &&
+              !q.error && (
+                <Text
+                  style={{ textAlign: "center", color: muted, padding: 20 }}
+                >
+                  还没有对话
+                </Text>
+              )}
           </View>
         </ScrollView>
 
@@ -526,7 +563,9 @@ export function Router({
           <View
             style={{
               borderWidth: 1,
-              borderColor: inputFocused ? colors.foregroundMuted : colors.border,
+              borderColor: inputFocused
+                ? colors.foregroundMuted
+                : colors.border,
               backgroundColor: colors.surface1,
               borderRadius: 18,
               padding: 6,
@@ -572,7 +611,7 @@ export function Router({
                     }
                   : undefined
               }
-              editable={!pending && !changed}
+              editable={!changed}
               accessibilityLabel="给 Router 发送消息"
               placeholder="发送消息…"
               placeholderTextColor={muted}

@@ -34,6 +34,7 @@ const event = z.object({
   ]),
   text: z.string().optional(),
   source: z.string().optional(),
+  requestId: z.string().optional(),
   form: z.string().optional(),
   name: z.string().optional(),
   call: z.string().optional(),
