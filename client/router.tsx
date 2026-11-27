@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import {
+  Keyboard,
   Modal as NativeModal,
   Platform,
   Pressable,
@@ -19,12 +20,14 @@ import {
   View,
 } from "react-native";
 import { useRpc, type PluginScreenProps } from "@getpaseo/plugin/client";
-import { Icon, Modal } from "@getpaseo/plugin/client/ui";
+import { Icon } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import type { RpcOutput } from "@getpaseo/plugin";
 import * as api from "../shared/api";
 import { Action, errorText, Loading, Notice, type Theme } from "./common";
-import { pickFiles } from "./web";
+import { pickAttachments } from "./web";
+import { ComposerSheet } from "./composer-sheet";
+import type { AttachmentAction } from "./attachments";
 
 import {
   transcript,
@@ -142,12 +145,20 @@ export function Router({
   const instance = firstInstance.current || "",
     changed = !!q.data && q.data.instance !== instance;
   const [draft, setDraft] = useState(""),
+    [inputFocused, setInputFocused] = useState(false),
     [files, setFiles] = useState<{ name: string; id: string }[]>([]),
     [error, report] = useState(""),
     [pending, setPending] = useState(false);
   const [window, setWindow] = useState<Window | null>(null),
-    [choices, setChoices] = useState<Selection[]>([]),
+    [menu, setMenu] = useState<"attachments" | "models" | null>(null),
     [chosen, setChosen] = useState<Selection | null>(null);
+  const models = useQuery({
+    queryKey: ["dsh-router-models", host.id, instance],
+    queryFn: () => catalog({ instance }),
+    enabled: menu === "models" && !!instance && !changed,
+    retry: false,
+  });
+  const choices = models.data || [];
   const lock = useRef(false),
     retry = useRef({ key: "", id: "" }),
     log = useRef<ScrollView>(null),
@@ -226,7 +237,7 @@ export function Router({
       model: m.model,
       reasoningEffort: effort,
     });
-    setChoices([]);
+    setMenu(null);
     setChosen(null);
     await q.refetch();
   }
@@ -238,11 +249,32 @@ export function Router({
     if (canSend && !lock.current) void run(() => submit(mode));
   }
   const closeChoices = () => {
-    setChoices([]);
+    setMenu(null);
     setChosen(null);
   };
-  const pickerTitle = chosen ? "推理强度" : "选择模型";
-  const pickerOpen = choices.length > 0;
+  function openMenu(which: "attachments" | "models") {
+    if (Platform.OS !== "web") Keyboard.dismiss();
+    report("");
+    setMenu(which);
+  }
+  function addAttachment(action: AttachmentAction) {
+    closeChoices();
+    void run(async () => {
+      const picked = await pickAttachments(action, 12 - files.length);
+      for (const f of picked) {
+        const id = await upload({ instance, ...f });
+        setFiles((prev) => [...prev, { name: f.name, id }]);
+      }
+    });
+  }
+  const attachmentItems = [
+    { action: "image", label: "添加图片", icon: "Image" },
+    { action: "paste", label: "粘贴图片", icon: "ClipboardPaste" },
+    { action: "file", label: "上传文件", icon: "Paperclip" },
+  ] as const;
+  const pickerTitle =
+    menu === "attachments" ? "添加附件" : chosen ? "推理强度" : "选择模型";
+  const pickerOpen = menu !== null;
   const handleBack = pickerOpen ? closeChoices : back;
   useImperativeHandle(embeddedBack, () => handleBack, [handleBack]);
   const matchingModels = choices.filter(
@@ -266,7 +298,11 @@ export function Router({
                 theme={theme}
                 label={e.name}
                 disabled={pending}
-                checked={chosen === activeModel && e.id === data?.effort}
+                checked={
+                  chosen.provider === activeModel?.provider &&
+                  chosen.model === activeModel?.model &&
+                  e.id === data?.effort
+                }
                 onPress={() => run(() => choose(chosen, e.id || undefined))}
               />
             ))
@@ -283,9 +319,6 @@ export function Router({
               />
             ))}
       </View>
-      <Action theme={theme} onPress={closeChoices}>
-        取消
-      </Action>
     </>
   );
   const conversation = (
@@ -294,11 +327,9 @@ export function Router({
     >
       <View
         style={{ flex: 1, backgroundColor: colors.surface0 }}
-        accessibilityElementsHidden={compact && pickerOpen}
-        importantForAccessibility={
-          compact && pickerOpen ? "no-hide-descendants" : "auto"
-        }
-        aria-hidden={compact && pickerOpen}
+        accessibilityElementsHidden={pickerOpen}
+        importantForAccessibility={pickerOpen ? "no-hide-descendants" : "auto"}
+        aria-hidden={pickerOpen}
       >
         {!embeddedBack && (
           <View
@@ -493,119 +524,88 @@ export function Router({
           }}
         >
           <View
-            style={
-              compact
-                ? {
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                    backgroundColor: colors.surface1,
-                    borderRadius: 17,
-                    padding: 6,
-                  }
-                : { gap: 6 }
-            }
+            style={{
+              borderWidth: 1,
+              borderColor: inputFocused ? colors.foregroundMuted : colors.border,
+              backgroundColor: colors.surface1,
+              borderRadius: 18,
+              padding: 6,
+            }}
           >
-            <View
-              style={
-                compact
-                  ? undefined
-                  : {
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      backgroundColor: colors.surface1,
-                      borderRadius: 12,
-                      padding: 5,
+            {files.length > 0 && (
+              <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+                {files.map((f) => (
+                  <Action
+                    key={f.id}
+                    theme={theme}
+                    disabled={pending}
+                    label={"移除 " + f.name}
+                    onPress={() =>
+                      setFiles((prev) => prev.filter((x) => x.id !== f.id))
                     }
+                  >
+                    {f.name + " ×"}
+                  </Action>
+                ))}
+              </View>
+            )}
+            <TextInput
+              multiline
+              underlineColorAndroid="transparent"
+              onFocus={() => setInputFocused(true)}
+              onBlur={() => setInputFocused(false)}
+              onKeyPress={
+                desktopKeys
+                  ? (e) => {
+                      const key = e.nativeEvent as typeof e.nativeEvent & {
+                        repeat?: boolean;
+                      };
+                      if (key.key !== "Enter") return;
+                      const mode = enterDelivery(
+                        key,
+                        readSendPreferences(),
+                        !!data?.busy,
+                      );
+                      if (!mode) return;
+                      e.preventDefault();
+                      if (!key.repeat) sendDraft(mode);
+                    }
+                  : undefined
               }
-            >
-              {files.length > 0 && (
-                <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-                  {files.map((f) => (
-                    <Action
-                      key={f.id}
-                      theme={theme}
-                      disabled={pending}
-                      label={"移除 " + f.name}
-                      onPress={() =>
-                        setFiles((prev) => prev.filter((x) => x.id !== f.id))
-                      }
-                    >
-                      {f.name + " ×"}
-                    </Action>
-                  ))}
-                </View>
-              )}
-              <TextInput
-                multiline
-                onKeyPress={
-                  desktopKeys
-                    ? (e) => {
-                        const key = e.nativeEvent as typeof e.nativeEvent & {
-                          repeat?: boolean;
-                        };
-                        if (key.key !== "Enter") return;
-                        const mode = enterDelivery(
-                          key,
-                          readSendPreferences(),
-                          !!data?.busy,
-                        );
-                        if (!mode) return;
-                        e.preventDefault();
-                        if (!key.repeat) sendDraft(mode);
-                      }
-                    : undefined
-                }
-                editable={!pending && !changed}
-                accessibilityLabel="给 Router 发送消息"
-                placeholder="发送消息…"
-                placeholderTextColor={muted}
-                value={draft}
-                onChangeText={setDraft}
-                style={{
-                  color,
-                  fontSize: 15,
-                  minHeight: 42,
-                  maxHeight: 128,
-                  paddingHorizontal: 9,
-                  paddingVertical: 9,
-                }}
-              />
-            </View>
+              editable={!pending && !changed}
+              accessibilityLabel="给 Router 发送消息"
+              placeholder="发送消息…"
+              placeholderTextColor={muted}
+              value={draft}
+              onChangeText={setDraft}
+              style={{
+                color,
+                fontSize: 15,
+                minHeight: 42,
+                maxHeight: 128,
+                outlineWidth: 0,
+                backgroundColor: "transparent",
+                paddingHorizontal: 9,
+                paddingVertical: 9,
+              }}
+            />
             <View
               style={{ flexDirection: "row", alignItems: "center", gap: 3 }}
             >
-              {Platform.OS === "web" && (
-                <Action
-                  theme={theme}
-                  disabled={disabled}
-                  label="添加文件"
-                  onPress={() =>
-                    run(async () => {
-                      const picked = await pickFiles();
-                      if (files.length + picked.length > 12)
-                        throw Error("每条消息最多 12 个附件");
-                      for (const f of picked) {
-                        const id = await upload({ instance, ...f });
-                        setFiles((prev) => [...prev, { name: f.name, id }]);
-                      }
-                    })
-                  }
-                >
-                  <Icon name="Paperclip" size={18} color={muted} />
-                </Action>
-              )}
+              <Action
+                theme={theme}
+                disabled={disabled}
+                label="添加附件"
+                onPress={() => openMenu("attachments")}
+              >
+                <Icon name="Plus" size={20} color={color} />
+              </Action>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="选择模型"
                 disabled={disabled}
-                onPress={() =>
-                  run(async () => {
-                    const options = await catalog({ instance });
-                    if (!options.length) throw Error("DSH 尚未配置可用模型");
-                    setChoices(options);
-                  })
-                }
-                accessibilityState={{ disabled, expanded: choices.length > 0 }}
+                onPress={() => openMenu("models")}
+                accessibilityState={{ disabled, expanded: menu === "models" }}
                 hitSlop={{ top: 4, bottom: 4, left: 0, right: 0 }}
                 style={({ pressed }) => ({
                   flexDirection: "row",
@@ -615,13 +615,10 @@ export function Router({
                   minHeight: 34,
                   paddingHorizontal: 10,
                   borderRadius: 9,
-                  backgroundColor: colors.surface2,
-                  borderWidth: 1,
-                  borderColor: colors.border,
+                  backgroundColor: pressed ? colors.surface2 : "transparent",
                   opacity: disabled ? 0.5 : pressed ? 0.8 : 1,
                 })}
               >
-                <Icon name="Cpu" size={15} color={color} />
                 <Text
                   numberOfLines={1}
                   style={{
@@ -714,78 +711,71 @@ export function Router({
       </View>
     </ChatContext.Provider>
   );
-  const compactContent = (
-    <>
+  const content = (
+    <View style={{ flex: 1 }}>
       {conversation}
-      {pickerOpen && (
-        <View
-          accessibilityViewIsModal
-          style={{
-            position: "absolute",
-            top: 0,
-            bottom: 0,
-            left: 0,
-            right: 0,
-            justifyContent: "flex-end",
-            backgroundColor: "rgba(0,0,0,0.4)",
-          }}
+      {menu && (
+        <ComposerSheet
+          title={pickerTitle}
+          theme={theme}
+          compact={compact}
+          close={closeChoices}
         >
-          <Pressable
-            accessible={false}
-            onPress={closeChoices}
-            style={{ flex: 1 }}
-          />
-          <View
-            style={{
-              maxHeight: "80%",
-              backgroundColor: colors.surface1,
-              borderTopLeftRadius: 16,
-              borderTopRightRadius: 16,
-              padding: 16,
-            }}
-          >
-            <Text
-              accessibilityRole="header"
-              style={{
-                color,
-                fontSize: 16,
-                fontWeight: "600",
-                marginBottom: 8,
-              }}
-            >
-              {pickerTitle}
-            </Text>
-            <ScrollView keyboardShouldPersistTaps="handled">
+          {menu === "attachments" ? (
+            attachmentItems
+              .filter(
+                (item) =>
+                  item.action !== "paste" || compact || Platform.OS !== "web",
+              )
+              .map((item) => (
+                <Action
+                  key={item.action}
+                  theme={theme}
+                  label={item.label}
+                  onPress={() => addAttachment(item.action)}
+                >
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 12,
+                      minHeight: 44,
+                    }}
+                  >
+                    <Icon name={item.icon} size={19} color={muted} />
+                    <Text style={{ color, fontSize: 15 }}>{item.label}</Text>
+                  </View>
+                </Action>
+              ))
+          ) : models.isPending ? (
+            <Loading theme={theme} />
+          ) : models.error ? (
+            <>
+              <Notice theme={theme} text={errorText(models.error)} />
+              <Action theme={theme} onPress={() => void models.refetch()}>
+                重试
+              </Action>
+            </>
+          ) : !choices.length ? (
+            <Notice theme={theme} text="DSH 尚未配置可用模型" />
+          ) : (
+            <>
+              <Notice theme={theme} text={error} />
               {pickerItems}
-            </ScrollView>
-          </View>
-        </View>
+            </>
+          )}
+        </ComposerSheet>
       )}
-    </>
+    </View>
   );
-  if (embeddedBack) return compactContent;
-  return compact ? (
+  if (embeddedBack || !compact) return content;
+  return (
     <NativeModal
       visible
       presentationStyle="fullScreen"
       onRequestClose={handleBack}
     >
-      <MobileFrame backgroundColor={colors.surface0}>
-        {compactContent}
-      </MobileFrame>
+      <MobileFrame backgroundColor={colors.surface0}>{content}</MobileFrame>
     </NativeModal>
-  ) : (
-    <>
-      {conversation}
-      <Modal
-        title={pickerTitle}
-        open={pickerOpen}
-        onOpenChange={(open) => {
-          if (!open) closeChoices();
-        }}
-      >
-        <Modal.Content>{pickerItems}</Modal.Content>
-      </Modal>
-    </>
   );
 }

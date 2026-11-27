@@ -4,4 +4,4 @@ Use Paseo 0.17.5 or later and a DSH Web instance with Superagent installed and i
 
 The panel is in Simplified Chinese and shows incoming work, decisions and execution history. You can send tasks, view images and delivered files, and edit Superagent settings. Ticket details offer retry and stop actions when DSH makes them available.
 
-Messages and uploads go to the selected DSH instance. DSH may send conversation content and tool results to its configured model provider. Desktop and web clients support file uploads. On native iOS and Android with Paseo 0.17.5, use the browser when you need to attach a file.
+Messages and uploads go to the selected DSH instance. DSH may send conversation content and tool results to its configured model provider. Use **+** in the Router composer to attach files and images. On mobile, you can also paste an image from the clipboard.
