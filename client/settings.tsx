@@ -17,6 +17,7 @@ export function ConnectionSettings({ theme, host }: PluginSurfaceProps) {
     [result, report] = useState(""),
     [busy, lock] = useState(false);
   const url = edited ?? current.data?.url ?? "";
+  const hasCredential = !!token.trim() || (current.data?.authenticated && url.trim() === current.data.url);
   const field = {
     borderWidth: 1,
     borderColor: theme.colors.surface2,
@@ -85,11 +86,10 @@ export function ConnectionSettings({ theme, host }: PluginSurfaceProps) {
         placeholder="http://127.0.0.1:3083"
       />
       <Text style={{ color: theme.colors.foreground }}>
-        DSH Web 登录令牌（可选）
+        DSH Web 登录令牌（首次连接必填）
       </Text>
       <Text style={{ color: theme.colors.foregroundMuted, fontSize: 13 }}>
-        只查看面板可留空。要连接需要登录的 Router，请在 DSH Web
-        启动终端或当前实例的启动日志中找到登录链接，复制 token 参数的值。
+        在运行 Superagent 的 Web profile 启动终端或服务日志里找到「dsh web:」登录链接，复制 token 参数的值。使用 Desktop 安装的 dsh 命令启动时，链接也显示在终端。
       </Text>
       <TextInput
         accessibilityLabel="DSH Web 登录令牌"
@@ -120,7 +120,7 @@ export function ConnectionSettings({ theme, host }: PluginSurfaceProps) {
         <Action
           theme={theme}
           selected
-          disabled={busy || !url}
+          disabled={busy || !url || !hasCredential}
           onPress={() => check(true)}
         >
           验证并保存

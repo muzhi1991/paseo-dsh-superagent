@@ -132,7 +132,7 @@ export async function check({
     const r = await request(c, "/");
     status.reachable = true;
     await r.body?.cancel();
-    await state(c);
+    const s = await state(c);
     status.superagent = true;
     if (token.trim()) {
       const login = await request(
@@ -147,22 +147,17 @@ export async function check({
       if (!cookie) throw Error("DSH 未接受登录令牌。");
       c.cookie = cookie;
     }
-    const s = await state(c);
-    try {
-      const p = await rpc(c, "session/projections", {
-        request: { sessionId: s.masterId },
-      });
-      status.router = p?.kind === "sequenced";
-    } catch (e) {
-      if (token.trim() || c.cookie) throw e;
-    }
+    if (!c.cookie) throw Error("首次连接此实例需要 DSH Web 启动令牌。");
+    const projection = await rpc(c, "session/projections", {
+      request: { sessionId: s.masterId },
+    });
+    status.router = projection?.kind === "sequenced";
+    if (!status.router) throw Error("已检测到 Superagent，Router 主会话尚不可读取。");
     if (save) {
       await persist(c);
       status.saved = true;
     }
-    status.detail = status.router
-      ? "已验证 Superagent 和 Router 主会话"
-      : "已验证 Superagent；请提供 DSH 登录令牌后使用主会话";
+    status.detail = "已验证 Superagent 和 Router 主会话";
   } catch (e) {
     status.detail = e instanceof Error ? e.message : "验证失败";
   }

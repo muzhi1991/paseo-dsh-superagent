@@ -15,8 +15,10 @@ paseo plugin install git:muzhi1991/paseo-dsh-superagent
 进入 **Paseo 设置 → 插件 → DSH Superagent → DSH 实例**。填写 daemon 能访问的实例根地址。DSH 和 daemon 同机时可以填 `http://127.0.0.1:3083`，端口以实际 profile 为准。
 
 1. 点「测试连接」。插件检查地址是否可达，然后验证 Superagent 状态接口的结构和主 Session ID。
-2. 只看管理面板可留空。要访问需要登录的 Router，在 DSH Web 启动终端或服务启动日志中找到登录链接（用 dsh-superagent 脚本启动时见该 checkout 的 `.artifacts/dsh-superagent-<profile>-*.log`）。输入链接里 `token` 的值，可以进一步验证 Router 会话读取。已有连接留空沿用凭据。首次配置可只启用管理视图。
-3. 点「验证并保存」。新实例通过验证后替换此 daemon 的连接。错误地址、无 Superagent 的 Web 服务、错误登录令牌都保留原连接。
+2. 首次连接或切换实例时，填写该实例的 DSH Web 启动令牌。在运行 Superagent 的 Web profile 的启动终端找到 `dsh web:` 行，复制登录 URL 中的 `token` 参数。用服务脚本启动时，查看该 checkout 的 `.artifacts/dsh-superagent-<profile>-*.log`。
+3. 点「验证并保存」。只有 Superagent 检测和 Router 主会话读取均成功才会替换连接。再次验证当前实例时，已保存的有效凭据可以沿用。
+
+**使用 DeepSeek Harness Desktop 时**，欢迎页的「复制登录链接」用于账号登录。Paseo 需要的是运行 Superagent 的 Web profile 的启动链接。如果只打开了桌面窗口，请先用 Desktop 附带的 `dsh` CLI 运行已配置 Superagent 的 Web profile，例如在该 profile 尚未运行时执行 `dsh --profile superagent-dev --no-open`，将示例 profile 名替换为你的实际名称。已由服务管理器启动的实例直接查看启动日志。
 
 远端部署可在 daemon 电脑上建立 SSH 转发。例如将本地 3083 转发到远端回环地址的 3083，再配置本机回环地址。原版管理路由会检查 Host 和监听端口，因此转发时应使用相同端口。已配置受信 HTTPS 入口的部署需能同时提供管理和会话路由。
 

@@ -36,5 +36,5 @@ test("verify a candidate without changing the active instance; preserve the conn
   assert.equal((await check({url:second,token:"wrong",save:true})).saved,false);
   assert.equal((await config()).url,first);
   assert.equal((await check({url:second,token:"",save:true})).router,false);
-  assert.deepEqual(await config(),{url:second,cookie:""});
+  assert.deepEqual(await config(),{url:first,cookie:"dsh-auth-test=test"});
 });
