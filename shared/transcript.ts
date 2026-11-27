@@ -56,6 +56,7 @@ export const transcript = defineRpc({
   output: z.object({
     instance: z.string(),
     title: z.string(),
+    provider: z.string().optional(),
     model: z.string(),
     effort: z.string(),
     events: z.array(event),

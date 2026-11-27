@@ -260,6 +260,7 @@ export async function readTranscript({
   return {
     instance,
     title: typeof v.title === "string" ? v.title : "Router",
+    provider: sel.provider,
     model: sel.model || "选择模型",
     effort: sel.reasoningEffort || "",
     events,

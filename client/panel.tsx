@@ -24,7 +24,7 @@ import {
   type Command,
   type Route,
 } from "../shared/supervision";
-import { Action, Notice, errorText } from "./common";
+import { Action, Loading, Notice, errorText } from "./common";
 import { PanelDialog } from "./panel-dialog";
 import { Router } from "./router";
 import { Surface } from "./surface";
@@ -100,6 +100,7 @@ function InstancePanel(
       q.data?.pages
         .filter((p) => p.instance === result?.instance)
         .flatMap((p) => p.data?.items || []) || [];
+  const loading = q.isPending && !props.connectionError;
   const navigate = (next: Route) => {
     setProblem("");
     setStack((s) => [...s, next]);
@@ -341,7 +342,7 @@ function InstancePanel(
             key={JSON.stringify(route)}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={
-              route.page === "设置"
+              loading || route.page === "设置"
                 ? { flex: 1 }
                 : { paddingBottom: props.closePanel ? 0 : 24 }
             }
@@ -365,9 +366,7 @@ function InstancePanel(
                 problem ||
                 (props.connectionError || q.error
                   ? errorText(props.connectionError || q.error)
-                  : q.isPending
-                    ? "正在读取…"
-                    : "")
+                  : "")
               }
             />
             {(props.connectionError || q.error) && (
@@ -381,6 +380,7 @@ function InstancePanel(
                 重新读取
               </Action>
             )}
+            {loading && <Loading theme={theme} />}
             {result && (
               <PageContents
                 key={result.instance}

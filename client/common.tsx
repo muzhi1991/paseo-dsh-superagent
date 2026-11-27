@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import type { PluginHostProps } from "@getpaseo/plugin/client";
 export type Theme = PluginHostProps["theme"];
 export function Action({
@@ -45,6 +45,19 @@ export function Action({
         children
       )}
     </Pressable>
+  );
+}
+export function Loading({ theme }: { theme: Theme }) {
+  return (
+    <View
+      accessibilityLiveRegion="polite"
+      style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 10 }}
+    >
+      <ActivityIndicator color={theme.colors.foregroundMuted} />
+      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 14 }}>
+        正在加载中
+      </Text>
+    </View>
   );
 }
 export function Notice({ theme, text }: { theme: Theme; text: string }) {

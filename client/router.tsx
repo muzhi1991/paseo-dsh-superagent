@@ -23,7 +23,7 @@ import { Icon, Modal } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import type { RpcOutput } from "@getpaseo/plugin";
 import * as api from "../shared/api";
-import { Action, errorText, Notice } from "./common";
+import { Action, errorText, Loading, Notice, type Theme } from "./common";
 import { pickFiles } from "./web";
 
 import {
@@ -61,6 +61,52 @@ function merge(current: Window | null, page: History, prepend = false): Window {
   };
 }
 type Selection = RpcOutput<typeof api.models>[number];
+function PickerOption({
+  theme,
+  label,
+  checked,
+  disabled,
+  onPress,
+}: {
+  theme: Theme;
+  label: string;
+  checked: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  const { colors } = theme;
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityLabel={label}
+      accessibilityState={{ checked, disabled }}
+      aria-checked={checked}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        minHeight: 44,
+        paddingHorizontal: 12,
+        gap: 10,
+        borderRadius: 8,
+        backgroundColor: checked || pressed ? colors.surface2 : "transparent",
+      })}
+    >
+      <Text
+        style={{
+          flex: 1,
+          fontSize: 14,
+          color: colors.foreground,
+          fontWeight: checked ? "600" : "400",
+        }}
+      >
+        {label}
+      </Text>
+      {checked && <Icon name="Check" color={colors.foreground} size={18} />}
+    </Pressable>
+  );
+}
 function requestId() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (k) => {
     const n = Math.floor(Math.random() * 16);
@@ -199,33 +245,44 @@ export function Router({
   const pickerOpen = choices.length > 0;
   const handleBack = pickerOpen ? closeChoices : back;
   useImperativeHandle(embeddedBack, () => handleBack, [handleBack]);
+  const matchingModels = choices.filter(
+    (m) =>
+      m.model === data?.model &&
+      (!data.provider || m.provider === data.provider),
+  );
+  const activeModel =
+    matchingModels.length === 1 ? matchingModels[0] : undefined;
   const pickerItems = pickerOpen && (
     <>
-      {chosen
-        ? [{ id: "", name: "默认" }, ...chosen.efforts].map((e) => (
-            <Action
-              key={e.id}
-              theme={theme}
-              disabled={pending}
-              selected={chosen.model === data?.model && e.id === data?.effort}
-              onPress={() => run(() => choose(chosen, e.id || undefined))}
-            >
-              {e.name}
-            </Action>
-          ))
-        : choices.map((m) => (
-            <Action
-              key={m.provider + "/" + m.model}
-              theme={theme}
-              disabled={pending}
-              selected={m.model === data?.model}
-              onPress={() =>
-                m.efforts.length ? setChosen(m) : run(() => choose(m))
-              }
-            >
-              {m.label}
-            </Action>
-          ))}
+      <View
+        accessibilityRole="radiogroup"
+        accessibilityLabel={pickerTitle}
+        style={{ gap: 2 }}
+      >
+        {chosen
+          ? [{ id: "", name: "默认" }, ...chosen.efforts].map((e) => (
+              <PickerOption
+                key={e.id}
+                theme={theme}
+                label={e.name}
+                disabled={pending}
+                checked={chosen === activeModel && e.id === data?.effort}
+                onPress={() => run(() => choose(chosen, e.id || undefined))}
+              />
+            ))
+          : choices.map((m) => (
+              <PickerOption
+                key={m.provider + "/" + m.model}
+                theme={theme}
+                label={m.label}
+                disabled={pending}
+                checked={m === activeModel}
+                onPress={() =>
+                  m.efforts.length ? setChosen(m) : run(() => choose(m))
+                }
+              />
+            ))}
+      </View>
       <Action theme={theme} onPress={closeChoices}>
         取消
       </Action>
@@ -309,6 +366,7 @@ export function Router({
           }
         />
         <ScrollView
+          contentContainerStyle={q.isPending ? { flexGrow: 1 } : undefined}
           key={latestSeq === undefined ? "empty" : "transcript"}
           ref={log}
           style={{
@@ -393,6 +451,7 @@ export function Router({
             onLayout={images.layoutChanged}
             style={{
               width: "100%",
+              flexGrow: q.isPending ? 1 : undefined,
               maxWidth: 716,
               alignSelf: "center",
               paddingHorizontal: 16,
@@ -413,9 +472,10 @@ export function Router({
                   card={data?.actionCards?.[t.id]}
                 />
               ))}
-            {!turns.length && !q.error && (
+            {q.isPending && <Loading theme={theme} />}
+            {!turns.length && !q.isPending && !q.error && (
               <Text style={{ textAlign: "center", color: muted, padding: 20 }}>
-                {q.isPending ? "正在读取主会话…" : "还没有对话"}
+                还没有对话
               </Text>
             )}
           </View>
@@ -433,66 +493,84 @@ export function Router({
           }}
         >
           <View
-            style={{
-              borderWidth: 1,
-              borderColor: colors.border,
-              backgroundColor: colors.surface1,
-              borderRadius: 17,
-              padding: 6,
-            }}
+            style={
+              compact
+                ? {
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.surface1,
+                    borderRadius: 17,
+                    padding: 6,
+                  }
+                : { gap: 6 }
+            }
           >
-            {files.length > 0 && (
-              <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-                {files.map((f) => (
-                  <Action
-                    key={f.id}
-                    theme={theme}
-                    disabled={pending}
-                    label={"移除 " + f.name}
-                    onPress={() =>
-                      setFiles((prev) => prev.filter((x) => x.id !== f.id))
+            <View
+              style={
+                compact
+                  ? undefined
+                  : {
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      backgroundColor: colors.surface1,
+                      borderRadius: 12,
+                      padding: 5,
                     }
-                  >
-                    {f.name + " ×"}
-                  </Action>
-                ))}
-              </View>
-            )}
-            <TextInput
-              multiline
-              onKeyPress={
-                desktopKeys
-                  ? (e) => {
-                      const key = e.nativeEvent as typeof e.nativeEvent & {
-                        repeat?: boolean;
-                      };
-                      if (key.key !== "Enter") return;
-                      const mode = enterDelivery(
-                        key,
-                        readSendPreferences(),
-                        !!data?.busy,
-                      );
-                      if (!mode) return;
-                      e.preventDefault();
-                      if (!key.repeat) sendDraft(mode);
-                    }
-                  : undefined
               }
-              editable={!pending && !changed}
-              accessibilityLabel="给 Router 发送消息"
-              placeholder="发送消息…"
-              placeholderTextColor={muted}
-              value={draft}
-              onChangeText={setDraft}
-              style={{
-                color,
-                fontSize: 15,
-                minHeight: 42,
-                maxHeight: 128,
-                paddingHorizontal: 9,
-                paddingVertical: 9,
-              }}
-            />
+            >
+              {files.length > 0 && (
+                <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+                  {files.map((f) => (
+                    <Action
+                      key={f.id}
+                      theme={theme}
+                      disabled={pending}
+                      label={"移除 " + f.name}
+                      onPress={() =>
+                        setFiles((prev) => prev.filter((x) => x.id !== f.id))
+                      }
+                    >
+                      {f.name + " ×"}
+                    </Action>
+                  ))}
+                </View>
+              )}
+              <TextInput
+                multiline
+                onKeyPress={
+                  desktopKeys
+                    ? (e) => {
+                        const key = e.nativeEvent as typeof e.nativeEvent & {
+                          repeat?: boolean;
+                        };
+                        if (key.key !== "Enter") return;
+                        const mode = enterDelivery(
+                          key,
+                          readSendPreferences(),
+                          !!data?.busy,
+                        );
+                        if (!mode) return;
+                        e.preventDefault();
+                        if (!key.repeat) sendDraft(mode);
+                      }
+                    : undefined
+                }
+                editable={!pending && !changed}
+                accessibilityLabel="给 Router 发送消息"
+                placeholder="发送消息…"
+                placeholderTextColor={muted}
+                value={draft}
+                onChangeText={setDraft}
+                style={{
+                  color,
+                  fontSize: 15,
+                  minHeight: 42,
+                  maxHeight: 128,
+                  paddingHorizontal: 9,
+                  paddingVertical: 9,
+                }}
+              />
+            </View>
             <View
               style={{ flexDirection: "row", alignItems: "center", gap: 3 }}
             >
