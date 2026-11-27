@@ -84,7 +84,13 @@ export function ConnectionSettings({ theme, host }: PluginSurfaceProps) {
         }}
         placeholder="http://127.0.0.1:3083"
       />
-      <Text style={{ color: theme.colors.foreground }}>DSH Web 登录令牌</Text>
+      <Text style={{ color: theme.colors.foreground }}>
+        DSH Web 登录令牌（可选）
+      </Text>
+      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 13 }}>
+        只查看面板可留空。要连接需要登录的 Router，请在 DSH Web
+        启动终端或当前实例的启动日志中找到登录链接，复制 token 参数的值。
+      </Text>
       <TextInput
         accessibilityLabel="DSH Web 登录令牌"
         secureTextEntry

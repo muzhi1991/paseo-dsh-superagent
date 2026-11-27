@@ -4,10 +4,9 @@ import { useRpc, type PluginScreenProps } from "@getpaseo/plugin/client";
 import { useQuery } from "@tanstack/react-query";
 import * as api from "../shared/api";
 import { Action, errorText, Notice } from "./common";
-import { ConnectionSettings } from "./settings";
 import { Router } from "./router";
 
-const tabs = ["概览", "来源", "触发", "评估", "执行", "设置"] as const;
+const tabs = ["概览", "来源", "触发", "评估", "执行"] as const;
 export function Panel(props: PluginScreenProps) {
   const { theme, host } = props,
     [tab, setTab] = useState<(typeof tabs)[number]>("概览"),
@@ -19,7 +18,7 @@ export function Panel(props: PluginScreenProps) {
   const data = useQuery({
     queryKey: ["dsh-panel", host.id, page, id, ended],
     queryFn: () => read({ page, id, ended }),
-    enabled: !chat && tab !== "设置",
+    enabled: !chat,
     refetchInterval: 10000,
     retry: false,
   });
@@ -75,80 +74,76 @@ export function Panel(props: PluginScreenProps) {
           ))}
         </View>
       )}
-      {tab === "设置" ? (
-        <ConnectionSettings {...props} />
-      ) : (
-        <ScrollView
-          contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 24 }}
-        >
-          {tab === "执行" && !id && (
-            <View style={{ flexDirection: "row" }}>
-              {["进行中", "已结束"].map((v, i) => (
-                <Action
-                  key={v}
-                  theme={theme}
-                  selected={ended === !!i}
-                  onPress={() => setEnded(!!i)}
-                >
-                  {v}
-                </Action>
-              ))}
-            </View>
-          )}
-          <Notice
-            theme={theme}
-            text={
-              data.error
-                ? errorText(data.error)
-                : data.isPending
-                  ? "正在读取…"
-                  : !data.data?.rows.length
-                    ? "没有记录"
-                    : ""
-            }
-          />
-          {data.data?.rows.map((r) => (
-            <Pressable
-              key={r.id}
-              disabled={!r.ticket}
-              onPress={() => detail(r.id)}
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 24 }}
+      >
+        {tab === "执行" && !id && (
+          <View style={{ flexDirection: "row" }}>
+            {["进行中", "已结束"].map((v, i) => (
+              <Action
+                key={v}
+                theme={theme}
+                selected={ended === !!i}
+                onPress={() => setEnded(!!i)}
+              >
+                {v}
+              </Action>
+            ))}
+          </View>
+        )}
+        <Notice
+          theme={theme}
+          text={
+            data.error
+              ? errorText(data.error)
+              : data.isPending
+                ? "正在读取…"
+                : !data.data?.rows.length
+                  ? "没有记录"
+                  : ""
+          }
+        />
+        {data.data?.rows.map((r) => (
+          <Pressable
+            key={r.id}
+            disabled={!r.ticket}
+            onPress={() => detail(r.id)}
+            style={{
+              paddingVertical: 10,
+              borderBottomWidth: 1,
+              borderColor: theme.colors.surface2,
+            }}
+          >
+            <Text selectable={!r.ticket} style={{ color, fontWeight: "500" }}>
+              {r.title}
+              {r.ticket ? "　›" : ""}
+            </Text>
+            <Text
+              selectable={!r.ticket}
               style={{
-                paddingVertical: 10,
-                borderBottomWidth: 1,
-                borderColor: theme.colors.surface2,
+                color: theme.colors.foregroundMuted,
+                fontSize: 12,
+                marginTop: 2,
               }}
             >
-              <Text selectable={!r.ticket} style={{ color, fontWeight: "500" }}>
-                {r.title}
-                {r.ticket ? "　›" : ""}
-              </Text>
-              <Text
-                selectable={!r.ticket}
-                style={{
-                  color: theme.colors.foregroundMuted,
-                  fontSize: 12,
-                  marginTop: 2,
-                }}
-              >
-                {r.detail}
-              </Text>
-            </Pressable>
-          ))}
-          {id && data.data?.agent && props.navigation && (
-            <Action
-              theme={theme}
-              onPress={() =>
-                props.navigation?.openAgent({
-                  agentId: data.data!.agent!,
-                  serverId: host.id,
-                })
-              }
-            >
-              打开执行 Agent ↗
-            </Action>
-          )}
-        </ScrollView>
-      )}
+              {r.detail}
+            </Text>
+          </Pressable>
+        ))}
+        {id && data.data?.agent && props.navigation && (
+          <Action
+            theme={theme}
+            onPress={() =>
+              props.navigation?.openAgent({
+                agentId: data.data!.agent!,
+                serverId: host.id,
+              })
+            }
+          >
+            打开执行 Agent ↗
+          </Action>
+        )}
+      </ScrollView>
     </View>
   );
 }
