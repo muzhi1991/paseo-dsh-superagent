@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Icon } from "@getpaseo/plugin/client/ui";
-import { View, Text, Pressable } from "react-native";
+import { View, Text, Pressable, ScrollView } from "react-native";
 import {
   Chips,
   Copy,
@@ -279,40 +279,58 @@ export function PageContents({
     return (
       <View
         style={{
+          flex: 1,
           flexDirection: compact ? "column" : "row",
           gap: compact ? 6 : 24,
         }}
       >
-        {compact ? (
-          chips
-        ) : (
-          <View style={{ width: 140, gap: 4 }}>
-            {Object.entries(filters.设置).map(([k, label]) => (
-              <Pressable
-                key={k}
-                accessibilityRole="button"
-                accessibilityState={{ selected: k === active }}
-                onPress={() => setRoute({ ...route, filter: k })}
+        <View
+          style={{
+            width: compact ? undefined : 140,
+            flexDirection: compact ? "row" : "column",
+            gap: 2,
+            flexWrap: "wrap",
+          }}
+        >
+          {Object.entries(filters.设置).map(([k, label]) => (
+            <Pressable
+              key={k}
+              accessibilityRole="button"
+              accessibilityState={{ selected: k === active }}
+              onPress={() => setRoute({ ...route, filter: k })}
+              style={{
+                paddingHorizontal: 10,
+                paddingVertical: 7,
+                marginTop: k === "prompts" && !compact ? 10 : 0,
+                borderRadius: 8,
+                backgroundColor: k === active ? colors.surface2 : "transparent",
+              }}
+            >
+              <Text
                 style={{
-                  padding: 9,
-                  borderRadius: 7,
-                  backgroundColor:
-                    k === active ? colors.surface2 : "transparent",
+                  color:
+                    k === active ? colors.foreground : colors.foregroundMuted,
+                  fontWeight: k === active ? "500" : "400",
+                  fontSize: 14,
                 }}
               >
-                <Text style={{ color: colors.foreground }}>{label}</Text>
-              </Pressable>
-            ))}
-          </View>
-        )}
-        <View style={{ flex: 1, minWidth: 0 }}>
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          style={{ flex: 1, minWidth: 0 }}
+          contentContainerStyle={{ paddingBottom: 30 }}
+        >
           <BusinessSettings
             key={active}
             group={active}
             v={v}
             instance={result.instance}
           />
-        </View>
+        </ScrollView>
       </View>
     );
   return (

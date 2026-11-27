@@ -15,6 +15,27 @@ function segment(id?: string) {
     throw Error("无效记录 ID");
   return encodeURIComponent(id);
 }
+async function deployment(c: Parameters<typeof rpc>[0]) {
+  const view = await rpc(c, "settings/describe", {});
+  const entry = view?.namespaces?.find(
+    (n: { ns: string }) => n.ns === "dsh-superagent",
+  );
+  if (!entry) return null;
+  const {
+    promptMaxChars,
+    admissionContextMaxPages,
+    admissionContextTimeoutMs,
+  } = entry.value ?? {};
+  return {
+    writable: view.writable === true && Number.isInteger(entry.revision),
+    revision: entry.revision,
+    value: {
+      promptMaxChars,
+      admissionContextMaxPages,
+      admissionContextTimeoutMs,
+    },
+  };
+}
 export async function readSupervision(r: Route) {
   const { c, s, instance } = await target();
   const read = (path: string, params: Record<string, string> = {}) =>
@@ -88,15 +109,25 @@ export async function readSupervision(r: Route) {
       }
       break;
     case "设置":
-      if (r.filter === "deployment") data = s.setup;
+      if (r.filter === "deployment")
+        data = {
+          ...s.setup,
+          form: await deployment(c).catch((e: Error) => {
+            if (e.message.includes("401")) throw e;
+            return null;
+          }),
+        };
       else if (r.filter === "prompts") data = await read("prompts");
-      else if (r.filter === "eval" || r.filter === "execution") {
-        const [settings, history] = await Promise.all([
+      else {
+        const [settings, history, models] = await Promise.all([
           read("settings"),
           read("policy/history"),
+          ["eval", "execution"].includes(r.filter || "")
+            ? read("models").catch(() => null)
+            : null,
         ]);
-        data = { ...settings, history: history.items };
-      } else data = await read("settings");
+        data = { ...settings, history: history.items, models };
+      }
       break;
   }
   return { instance, paused: s.paused, load: s.load, data, agent };
@@ -120,6 +151,33 @@ export async function change({
     body: unknown,
     method = "POST";
   switch (command.kind) {
+    case "deployment": {
+      const form = await deployment(c);
+      if (!form?.writable) throw Error("所选 DSH 实例的部署配置为只读。");
+      if (form.revision !== command.revision)
+        throw Error("部署配置已有新版本，请重新读取后再保存。");
+      const ops = Object.entries(command.changes).map(([key, value]) =>
+        value === null
+          ? { op: "unset", path: [key] }
+          : { op: "set", path: [key], value },
+      );
+      if (ops.length)
+        await rpc(c, "settings/mutate", {
+          ns: "dsh-superagent",
+          ops,
+          expectedRevision: command.revision,
+        });
+      return true;
+    }
+    case "sync-policy":
+      path = "policy-sync/" + segment(command.id);
+      break;
+    case "refresh-labels":
+      path = "sources/" + segment(command.id) + "/labels";
+      break;
+    case "check-setup":
+      path = "setup/check";
+      break;
     case "pause":
       path = "executor/pause";
       body = { paused: command.paused };

@@ -1,4 +1,9 @@
-import { view, mutate, previewPrompts } from "./shared/supervision";
+import {
+  view,
+  mutate,
+  previewPrompts,
+  promptVersions,
+} from "./shared/supervision";
 import { readSupervision, change } from "./server/supervision";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import * as api from "./shared/api";
@@ -16,6 +21,15 @@ import { readPanel } from "./server/panel";
 
 export default function contribute(server: PluginServerContext) {
   server.handle(view, readSupervision);
+  server.handle(promptVersions, async ({ instance, revision, offset }) => {
+    const { c } = await target(instance);
+    const params = new URLSearchParams();
+    if (revision !== undefined) params.set("revision", String(revision));
+    if (offset !== undefined) params.set("offset", String(offset));
+    return promptVersions.output.parse(
+      await management(c, "prompts?" + params),
+    );
+  });
   server.handle(previewPrompts, async ({ instance, config }) => {
     const { c } = await target(instance);
     const res = await request(c, "/orchestrator/api/prompts/preview", {

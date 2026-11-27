@@ -7,10 +7,31 @@ import type { Theme } from "./common";
 export const Surface = createContext<{
   theme: Theme;
   compact: boolean;
+  instance?: string;
+  drafts: Map<string, unknown>;
   go: (r: Route) => void;
   confirm: (title: string, command: Command, after?: () => void) => void;
 } | null>(null);
 export const useSurface = () => useContext(Surface)!;
+/** Preserve edits while moving between pages on the same host and DSH instance. */
+export function useSettingsDraft<T>(block: string) {
+  const { drafts, instance } = useSurface(),
+    key = JSON.stringify([instance, block]);
+  const [draft, setLocal] = useState<T | null>(
+    () => (drafts.get(key) as T) ?? null,
+  );
+  function setDraft(update: T | null | ((previous: T | null) => T | null)) {
+    const previous = (drafts.get(key) as T) ?? null;
+    const next =
+      typeof update === "function"
+        ? (update as (old: T | null) => T | null)(previous)
+        : update;
+    if (next === null) drafts.delete(key);
+    else drafts.set(key, next);
+    setLocal(next);
+  }
+  return [draft, setDraft] as const;
+}
 export function Copy({
   children,
   quiet = false,

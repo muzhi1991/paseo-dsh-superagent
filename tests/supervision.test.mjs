@@ -17,6 +17,13 @@ test("match the Web filters, retain cursors, and verify the same Router before m
   const { readSupervision, change } = await import("../server/supervision.ts");
   const calls = [];
   let authorized = true;
+  let writable = true,
+    revision = 8;
+  const machine = {
+    promptMaxChars: 9000,
+    admissionContextMaxPages: 10,
+    admissionContextTimeoutMs: 2000,
+  };
   const origin = "http://127.0.0.1:3083";
   await persist({ url: origin, cookie: "dsh-auth-test=session" });
   t.mock.method(globalThis, "fetch", async (input, init) => {
@@ -36,7 +43,35 @@ test("match the Web filters, retain cursors, and verify the same Router before m
             result: { ok: true, value: { kind: "sequenced" } },
           })
         : new Response(null, { status: 401 });
+    if (u.pathname === "/api/settings/describe")
+      return Response.json({
+        rpcId: body.rpcId,
+        result: {
+          ok: true,
+          value: {
+            writable,
+            namespaces: [
+              { ns: "other", value: { unrelated: true } },
+              { ns: "dsh-superagent", revision, value: machine },
+            ],
+          },
+        },
+      });
     calls.push({ u, init, body });
+    if (u.pathname === "/api/settings/mutate") {
+      const { ns, expectedRevision, ops } = body.payload.args;
+      assert.equal(ns, "dsh-superagent");
+      assert.equal(expectedRevision, revision);
+      for (const op of ops) {
+        if (op.op === "unset") delete machine[op.path[0]];
+        else machine[op.path[0]] = op.value;
+      }
+      revision++;
+      return Response.json({
+        rpcId: body.rpcId,
+        result: { ok: true, value: { writable, namespaces: [] } },
+      });
+    }
     if (init.method === "PUT" && body.revision !== 3)
       return new Response(null, { status: 409 });
     return Response.json({});
@@ -73,6 +108,49 @@ test("match the Web filters, retain cursors, and verify the same Router before m
   await assert.rejects(
     change({ instance, command: { ...command, revision: 1 } }),
     /已有新版本/,
+  );
+  const readForm = async () =>
+    (await readSupervision({ page: "设置", filter: "deployment" })).data.form;
+  assert.deepEqual(await readForm(), {
+    writable: true,
+    revision: 8,
+    value: { ...machine },
+  });
+  const deployment = {
+    kind: "deployment",
+    revision: 8,
+    changes: { promptMaxChars: 10000 },
+  };
+  await change({ instance, command: deployment });
+  assert.equal((await readForm()).value.promptMaxChars, 10000);
+  await assert.rejects(change({ instance, command: deployment }), /新版本/);
+  assert.equal(calls.at(-1).u.pathname, "/api/settings/mutate");
+  await change({
+    instance,
+    command: { ...deployment, revision: 9, changes: { promptMaxChars: null } },
+  });
+  assert.deepEqual(calls.at(-1).body.payload.args.ops, [
+    { op: "unset", path: ["promptMaxChars"] },
+  ]);
+  writable = false;
+  await assert.rejects(
+    change({ instance, command: { ...deployment, revision: 10 } }),
+    /只读/,
+  );
+  const { mutate } = await import("../shared/supervision.ts");
+  assert.equal(
+    mutate.input.safeParse({
+      instance,
+      command: { ...deployment, changes: { stateDir: "other" } },
+    }).success,
+    false,
+  );
+  assert.equal(
+    mutate.input.safeParse({
+      instance,
+      command: { ...deployment, changes: { admissionContextMaxPages: 0 } },
+    }).success,
+    false,
   );
   const count = calls.length;
   await assert.rejects(

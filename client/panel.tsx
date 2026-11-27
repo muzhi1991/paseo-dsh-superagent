@@ -41,6 +41,7 @@ export function Panel(props: PluginScreenProps) {
   const [pending, setPending] = useState<Confirmation | null>(null),
     [busy, setBusy] = useState(false),
     lock = useRef(false);
+  const drafts = useRef(new Map<string, unknown>());
   const [problem, setProblem] = useState("");
   const route = stack[stack.length - 1],
     read = useRpc(view),
@@ -135,7 +136,16 @@ export function Panel(props: PluginScreenProps) {
     />
   );
   return (
-    <Surface.Provider value={{ theme, compact: small, go: navigate, confirm }}>
+    <Surface.Provider
+      value={{
+        theme,
+        compact: small,
+        instance: result?.instance,
+        drafts: drafts.current,
+        go: navigate,
+        confirm,
+      }}
+    >
       <View
         onLayout={(e) => setPanelWidth(e.nativeEvent.layout.width)}
         style={{ flex: 1, backgroundColor: colors.surface0 }}
@@ -235,9 +245,12 @@ export function Panel(props: PluginScreenProps) {
             ))}
           </View>
           <ScrollView
+            scrollEnabled={route.page !== "设置"}
             key={JSON.stringify(route)}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingBottom: 24 }}
+            contentContainerStyle={
+              route.page === "设置" ? { flex: 1 } : { paddingBottom: 24 }
+            }
           >
             {stack.length > 1 && (
               <View style={{ alignItems: "flex-start" }}>
