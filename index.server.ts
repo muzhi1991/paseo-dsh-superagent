@@ -1,3 +1,5 @@
+import { view, mutate, previewPrompts } from "./shared/supervision";
+import { readSupervision, change } from "./server/supervision";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import * as api from "./shared/api";
 import {
@@ -13,6 +15,24 @@ import { dispatch } from "./server/dispatch";
 import { readPanel } from "./server/panel";
 
 export default function contribute(server: PluginServerContext) {
+  server.handle(view, readSupervision);
+  server.handle(previewPrompts, async ({ instance, config }) => {
+    const { c } = await target(instance);
+    const res = await request(c, "/orchestrator/api/prompts/preview", {
+      method: "POST",
+      headers: {
+        "x-orchestrator-request": "1",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok)
+      throw Error(
+        "提示词预览失败，请检查所选段落（HTTP " + res.status + "）。",
+      );
+    return previewPrompts.output.parse(await res.json());
+  });
+  server.handle(mutate, change);
   server.handle(api.connection, async () => {
     const c = await config();
     return { url: c.url, authenticated: !!c.cookie };
