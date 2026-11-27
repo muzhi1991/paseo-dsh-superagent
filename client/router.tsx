@@ -1,14 +1,54 @@
-import { useRef, useState } from "react";
-import { Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { useRpc, type PluginScreenProps } from "@getpaseo/plugin/client";
-import { Icon } from "@getpaseo/plugin/client/ui";
+import { Icon, Modal } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import type { RpcOutput } from "@getpaseo/plugin";
 import * as api from "../shared/api";
 import { Action, errorText, Notice } from "./common";
 import { pickFiles } from "./web";
 
-type History = RpcOutput<typeof api.history>;
+import {
+  transcript,
+  groupTurns,
+  type TranscriptEvent,
+} from "../shared/transcript";
+import { ChatContext, compactNumber, TurnView } from "./turn";
+
+type History = RpcOutput<typeof transcript>;
+type Window = { instance: string; events: TranscriptEvent[]; older?: number };
+function merge(current: Window | null, page: History, prepend = false): Window {
+  const first = page.events[0]?.seq,
+    last = current?.events.at(-1)?.seq;
+  if (
+    !current ||
+    current.instance !== page.instance ||
+    !current.events.length ||
+    (first !== undefined &&
+      last !== undefined &&
+      first > last &&
+      page.older !== undefined &&
+      page.older > last + 1)
+  )
+    return page;
+  const rows = new Map(current.events.map((e) => [e.seq, e]));
+  for (const e of page.events) rows.set(e.seq, e);
+  return {
+    instance: page.instance,
+    events: [...rows.values()].sort((a, b) => a.seq - b.seq),
+    older:
+      prepend || (first !== undefined && first <= current.events[0].seq)
+        ? page.older
+        : current.older,
+  };
+}
 type Selection = RpcOutput<typeof api.models>[number];
 function requestId() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (k) => {
@@ -22,19 +62,19 @@ export function Router({
   expected,
   back,
 }: PluginScreenProps & { expected?: string; back: () => void }) {
-  const history = useRpc(api.history),
+  const history = useRpc(transcript),
     send = useRpc(api.send),
     stop = useRpc(api.cancel),
     catalog = useRpc(api.models),
     select = useRpc(api.selectModel),
     upload = useRpc(api.upload);
+  const firstInstance = useRef(expected);
   const q = useQuery({
-    queryKey: ["dsh-router", host.id, expected],
-    queryFn: () => history({}),
+    queryKey: ["dsh-router-transcript", host.id, expected],
+    queryFn: () => history({ instance: firstInstance.current }),
     refetchInterval: 3500,
     retry: false,
   });
-  const firstInstance = useRef(expected);
   if (!firstInstance.current && q.data) firstInstance.current = q.data.instance;
   const instance = firstInstance.current || "",
     changed = !!q.data && q.data.instance !== instance;
@@ -42,7 +82,7 @@ export function Router({
     [files, setFiles] = useState<{ name: string; id: string }[]>([]),
     [error, report] = useState(""),
     [pending, setPending] = useState(false);
-  const [old, setOld] = useState<History[]>([]),
+  const [window, setWindow] = useState<Window | null>(null),
     [choices, setChoices] = useState<Selection[]>([]),
     [chosen, setChosen] = useState<Selection | null>(null);
   const lock = useRef(false),
@@ -67,12 +107,26 @@ export function Router({
   const data = q.data,
     color = theme.colors.foreground,
     muted = theme.colors.foregroundMuted;
-  const pages = [...old, ...(data ? [data] : [])],
-    entries = [
-      ...new Map(
-        pages.flatMap((p) => p.entries.map((e) => [e.seq, e] as const)),
-      ).values(),
-    ].sort((a, b) => a.seq - b.seq);
+  useEffect(() => {
+    if (data) setWindow((w) => merge(w, data));
+  }, [data]);
+  const turns = useMemo(() => groupTurns(window?.events || []), [window]);
+  const latestSeq = window?.events.at(-1)?.seq,
+    scrolledSeq = useRef<number | undefined>(undefined);
+  const scrollMetrics = useRef({ height: 0, y: 0 });
+  const prependHeight = useRef<number | null>(null);
+  function loadEarlier() {
+    const before = window?.older;
+    if (before === undefined || disabled || lock.current) return;
+    void run(async () => {
+      following.current = false;
+      const page = await history({ before, instance });
+      prependHeight.current = page.events.length
+        ? scrollMetrics.current.height
+        : null;
+      setWindow((w) => merge(w, page, true));
+    });
+  }
   async function submit() {
     const receipts = files.map((f) => f.id),
       key = JSON.stringify([instance, draft, receipts]);
@@ -103,211 +157,308 @@ export function Router({
     setChosen(null);
     await q.refetch();
   }
+  const colors = theme.colors;
+  const closeChoices = () => {
+    setChoices([]);
+    setChosen(null);
+  };
   return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: theme.colors.surface0,
-        paddingHorizontal: 12,
-      }}
-    >
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-        <Action theme={theme} onPress={back}>
-          ‹ 返回
-        </Action>
-        <Text style={{ color, fontWeight: "600" }}>Router · 主 Session</Text>
-      </View>
-      <Notice
-        theme={theme}
-        text={
-          changed
-            ? "实例已切换，请返回再打开主会话"
-            : error || errorText(q.error || "")
-        }
-      />
-      <ScrollView
-        ref={log}
-        style={{ flex: 1 }}
-        keyboardShouldPersistTaps="handled"
-        onScroll={(e) => {
-          const n = e.nativeEvent;
-          following.current =
-            n.contentOffset.y + n.layoutMeasurement.height >=
-            n.contentSize.height - 45;
-        }}
-        scrollEventThrottle={80}
-        onContentSizeChange={() => {
-          if (following.current) log.current?.scrollToEnd({ animated: false });
-        }}
-      >
-        {pages[0]?.older && (
-          <Action
-            theme={theme}
-            disabled={disabled}
-            onPress={() =>
-              run(async () => {
-                following.current = false;
-                const p = await history({ before: pages[0].older });
-                if (p.instance === instance) setOld([p, ...old]);
-              })
-            }
-          >
-            更早的消息
-          </Action>
-        )}
-        {!changed &&
-          entries.map((e) => (
-            <View
-              key={e.seq}
-              style={{
-                alignSelf: e.role === "user" ? "flex-end" : "stretch",
-                maxWidth: e.role === "user" ? "90%" : "100%",
-                backgroundColor:
-                  e.role === "user" ? theme.colors.surface2 : "transparent",
-                borderRadius: 10,
-                padding: e.role === "status" ? 3 : 10,
-                marginVertical: 2,
-              }}
-            >
-              {e.role === "assistant" && (
-                <Text style={{ fontWeight: "600", fontSize: 12, color: muted }}>
-                  Router
-                </Text>
-              )}
-              <Text
-                selectable
-                style={{
-                  color: e.role === "status" ? muted : color,
-                  fontSize: e.role === "status" ? 12 : 15,
-                }}
-              >
-                {e.text}
-              </Text>
-            </View>
-          ))}
-      </ScrollView>
-      {choices.length > 0 && (
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          style={{ maxHeight: 200, backgroundColor: theme.colors.surface1 }}
-        >
-          {chosen ? (
-            <>
-              {[{ id: "", name: "默认" }, ...chosen.efforts].map((e) => (
-                <Action
-                  key={e.id}
-                  theme={theme}
-                  onPress={() => run(() => choose(chosen, e.id || undefined))}
-                >
-                  {e.name}
-                </Action>
-              ))}
-            </>
-          ) : (
-            choices.map((m) => (
-              <Action
-                key={m.provider + "/" + m.model}
-                theme={theme}
-                onPress={() =>
-                  m.efforts.length ? setChosen(m) : run(() => choose(m))
-                }
-              >
-                {m.label}
-              </Action>
-            ))
-          )}
-        </ScrollView>
-      )}
-      <View
-        style={{
-          borderWidth: 1,
-          borderColor: theme.colors.surface2,
-          borderRadius: 13,
-          padding: 6,
-          marginVertical: 6,
-        }}
-      >
-        {files.map((f) => (
-          <Action
-            key={f.id}
-            disabled={pending}
-            theme={theme}
-            onPress={() => setFiles(files.filter((x) => x.id !== f.id))}
-          >
-            {f.name + " ×"}
-          </Action>
-        ))}
-        <TextInput
-          multiline
-          editable={!pending && !changed}
-          accessibilityLabel="给 Router 发送消息"
-          placeholder="给 Router 发送消息…"
-          placeholderTextColor={muted}
-          value={draft}
-          onChangeText={setDraft}
-          style={{ color, minHeight: 42, maxHeight: 100, padding: 6 }}
-        />
+    <ChatContext.Provider value={{ theme, hostId: host.id, instance, report }}>
+      <View style={{ flex: 1, backgroundColor: colors.surface0 }}>
         <View
           style={{
             flexDirection: "row",
             alignItems: "center",
-            flexWrap: "wrap",
+            gap: 8,
+            paddingHorizontal: 8,
+            minHeight: 49,
+            borderBottomWidth: 1,
+            borderColor: colors.border,
           }}
         >
-          {Platform.OS === "web" && (
-            <Action
-              theme={theme}
-              disabled={disabled}
-              label="添加文件"
-              onPress={() =>
-                run(async () => {
-                  for (const f of await pickFiles()) {
-                    const id = await upload({ instance, ...f });
-                    setFiles((prev) => [...prev, { name: f.name, id }]);
-                  }
-                })
-              }
-            >
-              <Icon name="Paperclip" size={19} color={color} />
-            </Action>
-          )}
-          <Action
-            theme={theme}
-            disabled={disabled}
-            onPress={() =>
-              run(async () => {
-                setChosen(null);
-                setChoices(choices.length ? [] : await catalog({ instance }));
-              })
+          <Action theme={theme} onPress={back} label="返回 Superagent">
+            <Icon name="ChevronLeft" size={20} color={color} />
+          </Action>
+          <Text
+            numberOfLines={1}
+            style={{ color, fontSize: 16, fontWeight: "600", flexShrink: 1 }}
+          >
+            {data?.title || "Router"}
+          </Text>
+          <Text style={{ color: muted, fontSize: 12 }}>主 Session</Text>
+        </View>
+        <Notice
+          theme={theme}
+          text={
+            changed
+              ? "实例已切换，请返回再打开主会话"
+              : error || errorText(q.error || "")
+          }
+        />
+        <ScrollView
+          ref={log}
+          style={{ flex: 1 }}
+          keyboardShouldPersistTaps="handled"
+          onScroll={(e) => {
+            const n = e.nativeEvent,
+              prior = scrollMetrics.current.y;
+            scrollMetrics.current.y = n.contentOffset.y;
+            following.current =
+              n.contentOffset.y + n.layoutMeasurement.height >=
+              n.contentSize.height - 45;
+            if (
+              n.contentOffset.y < 50 &&
+              prior > n.contentOffset.y &&
+              !following.current
+            )
+              loadEarlier();
+          }}
+          scrollEventThrottle={80}
+          onContentSizeChange={(_, height) => {
+            scrollMetrics.current.height = height;
+            if (prependHeight.current !== null) {
+              const delta = height - prependHeight.current;
+              prependHeight.current = null;
+              if (delta > 0)
+                log.current?.scrollTo({
+                  y: scrollMetrics.current.y + delta,
+                  animated: false,
+                });
+              return;
             }
-          >
-            {data?.model || "模型"}
-          </Action>
-          <View style={{ flex: 1 }} />
-          {data?.busy && (
-            <Action
-              theme={theme}
-              disabled={disabled}
-              onPress={() =>
-                run(async () => {
-                  await stop({ instance });
-                  await q.refetch();
-                })
-              }
-            >
-              停止本轮
+            if (latestSeq !== undefined && scrolledSeq.current !== latestSeq) {
+              scrolledSeq.current = latestSeq;
+              if (following.current)
+                log.current?.scrollToEnd({ animated: false });
+            }
+          }}
+          contentContainerStyle={{
+            width: "100%",
+            maxWidth: 716,
+            alignSelf: "center",
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: 14,
+          }}
+        >
+          {window?.older !== undefined && (
+            <Action theme={theme} disabled={disabled} onPress={loadEarlier}>
+              更早的消息
             </Action>
           )}
-          <Action
-            theme={theme}
-            disabled={disabled || (!draft.trim() && !files.length)}
-            selected
-            onPress={() => run(submit)}
+          {!changed && turns.map((t) => <TurnView key={t.id} turn={t} />)}
+          {!turns.length && !q.error && (
+            <Text style={{ textAlign: "center", color: muted, padding: 20 }}>
+              {q.isPending ? "正在读取主会话…" : "还没有对话"}
+            </Text>
+          )}
+        </ScrollView>
+        <Modal
+          title={chosen ? "推理强度" : "选择模型"}
+          open={choices.length > 0}
+          onOpenChange={(open) => {
+            if (!open) closeChoices();
+          }}
+        >
+          <Modal.Content>
+            {chosen
+              ? [{ id: "", name: "默认" }, ...chosen.efforts].map((e) => (
+                  <Action
+                    key={e.id}
+                    theme={theme}
+                    disabled={pending}
+                    selected={
+                      chosen.model === data?.model && e.id === data?.effort
+                    }
+                    onPress={() => run(() => choose(chosen, e.id || undefined))}
+                  >
+                    {e.name}
+                  </Action>
+                ))
+              : choices.map((m) => (
+                  <Action
+                    key={m.provider + "/" + m.model}
+                    theme={theme}
+                    disabled={pending}
+                    selected={m.model === data?.model}
+                    onPress={() =>
+                      m.efforts.length ? setChosen(m) : run(() => choose(m))
+                    }
+                  >
+                    {m.label}
+                  </Action>
+                ))}
+            <Action theme={theme} onPress={closeChoices}>
+              取消
+            </Action>
+          </Modal.Content>
+        </Modal>
+        <View
+          style={{
+            width: "100%",
+            maxWidth: 738,
+            alignSelf: "center",
+            paddingHorizontal: 12,
+            paddingBottom: 6,
+            paddingTop: 4,
+            gap: 5,
+          }}
+        >
+          <View
+            style={{
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.surface1,
+              borderRadius: 17,
+              padding: 6,
+            }}
           >
-            {data?.busy ? "排队发送" : "发送"}
-          </Action>
+            {files.length > 0 && (
+              <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+                {files.map((f) => (
+                  <Action
+                    key={f.id}
+                    theme={theme}
+                    disabled={pending}
+                    label={"移除 " + f.name}
+                    onPress={() =>
+                      setFiles((prev) => prev.filter((x) => x.id !== f.id))
+                    }
+                  >
+                    {f.name + " ×"}
+                  </Action>
+                ))}
+              </View>
+            )}
+            <TextInput
+              multiline
+              editable={!pending && !changed}
+              accessibilityLabel="给 Router 发送消息"
+              placeholder="发送消息…"
+              placeholderTextColor={muted}
+              value={draft}
+              onChangeText={setDraft}
+              style={{
+                color,
+                fontSize: 15,
+                minHeight: 42,
+                maxHeight: 128,
+                paddingHorizontal: 9,
+                paddingVertical: 9,
+              }}
+            />
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 3 }}
+            >
+              {Platform.OS === "web" && (
+                <Action
+                  theme={theme}
+                  disabled={disabled}
+                  label="添加文件"
+                  onPress={() =>
+                    run(async () => {
+                      const picked = await pickFiles();
+                      if (files.length + picked.length > 12)
+                        throw Error("每条消息最多 12 个附件");
+                      for (const f of picked) {
+                        const id = await upload({ instance, ...f });
+                        setFiles((prev) => [...prev, { name: f.name, id }]);
+                      }
+                    })
+                  }
+                >
+                  <Icon name="Paperclip" size={18} color={muted} />
+                </Action>
+              )}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="选择模型"
+                disabled={disabled}
+                onPress={() =>
+                  run(async () => {
+                    const options = await catalog({ instance });
+                    if (!options.length) throw Error("DSH 尚未配置可用模型");
+                    setChoices(options);
+                  })
+                }
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 4,
+                  flexShrink: 1,
+                  minHeight: 38,
+                }}
+              >
+                <Text
+                  numberOfLines={1}
+                  style={{ color: muted, fontSize: 12, flexShrink: 1 }}
+                >
+                  {[data?.model || "模型", data?.effort]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </Text>
+                <Icon name="ChevronDown" color={muted} size={13} />
+              </Pressable>
+              <View style={{ flex: 1 }} />
+              {data?.busy && (
+                <Action
+                  theme={theme}
+                  disabled={disabled}
+                  label="停止本轮"
+                  onPress={() =>
+                    run(async () => {
+                      await stop({ instance });
+                      await q.refetch();
+                    })
+                  }
+                >
+                  <Icon name="Square" size={15} color={color} />
+                </Action>
+              )}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={data?.busy ? "排队发送" : "发送"}
+                disabled={disabled || (!draft.trim() && !files.length)}
+                onPress={() => run(submit)}
+                style={{
+                  width: 34,
+                  height: 34,
+                  marginRight: 3,
+                  borderRadius: 17,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: colors.foreground,
+                  opacity:
+                    disabled || (!draft.trim() && !files.length) ? 0.38 : 1,
+                }}
+              >
+                <Icon name="ArrowUp" size={19} color={colors.surface0} />
+              </Pressable>
+            </View>
+          </View>
+          {data && (
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                gap: 6,
+                paddingHorizontal: 5,
+              }}
+            >
+              <Text style={{ color: muted, fontSize: 11 }}>
+                {data.stats.turns} 轮　{data.stats.steps} 步
+                {data.stats.speed ? " · " + data.stats.speed + " tok/s" : ""}
+              </Text>
+              <Text style={{ color: muted, fontSize: 11 }}>
+                {compactNumber(data.stats.tokens)} tok
+                {data.stats.pressure === undefined
+                  ? ""
+                  : " · 上下文 " + data.stats.pressure + "%"}
+              </Text>
+            </View>
+          )}
         </View>
       </View>
-    </View>
+    </ChatContext.Provider>
   );
 }

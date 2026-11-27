@@ -1,3 +1,5 @@
+import { transcript, eventDetail, imageAttachment } from "./shared/transcript";
+import { readTranscript, readEventDetail } from "./server/transcript";
 import {
   view,
   mutate,
@@ -21,6 +23,18 @@ import { readPanel } from "./server/panel";
 
 export default function contribute(server: PluginServerContext) {
   server.handle(view, readSupervision);
+  server.handle(transcript, readTranscript);
+  server.handle(eventDetail, readEventDetail);
+  server.handle(imageAttachment, async ({ instance, id: attachmentId }) => {
+    const { c, id } = await target(instance);
+    const v = await rpc(c, "session/attachment", {
+      request: { sessionId: id, attachmentId },
+    });
+    return imageAttachment.output.parse({
+      mime: v.attachment.mediaType,
+      data: v.data,
+    });
+  });
   server.handle(promptVersions, async ({ instance, revision, offset }) => {
     const { c } = await target(instance);
     const params = new URLSearchParams();
