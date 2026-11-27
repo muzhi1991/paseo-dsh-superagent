@@ -15,8 +15,9 @@ paseo plugin install git:muzhi1991/paseo-dsh-superagent
 进入 **Paseo 设置 → 插件 → DSH Superagent → DSH 实例**。填写 daemon 能访问的实例根地址。DSH 和 daemon 同机时可以填 `http://127.0.0.1:3083`，端口以实际 profile 为准。
 
 1. 点「测试连接」。插件检查地址是否可达，然后验证 Superagent 状态接口的结构和主 Session ID。
-2. 首次连接或切换实例时，填写该实例的 DSH Web 启动令牌。在运行 Superagent 的 Web profile 的启动终端找到 `dsh web:` 行，复制登录 URL 中的 `token` 参数。用服务脚本启动时，查看该 checkout 的 `.artifacts/dsh-superagent-<profile>-*.log`。
-3. 点「验证并保存」。只有 Superagent 检测和 Router 主会话读取均成功才会替换连接。再次验证当前实例时，已保存的有效凭据可以沿用。
+2. 新安装的原版 Superagent 要先在 DSH Web 的 Superagent 面板完成部署检查。GitHub 仓库和账号校验通过后，原版才会创建 Router 主会话。
+3. 首次连接或切换实例时，填写该实例的 DSH Web 启动令牌。在运行 Superagent 的 Web profile 的启动终端找到 `dsh web:` 行，复制登录 URL 中的 `token` 参数。用服务脚本启动时，查看该 checkout 的 `.artifacts/dsh-superagent-<profile>-*.log`。
+4. 点「验证并保存」。只有 Superagent 检测和 Router 主会话读取均成功才会替换连接。再次验证当前实例时，已保存的有效凭据可以沿用。
 
 **使用 DeepSeek Harness Desktop 时**，欢迎页的「复制登录链接」用于账号登录。Paseo 需要的是运行 Superagent 的 Web profile 的启动链接。如果只打开了桌面窗口，请先用 Desktop 附带的 `dsh` CLI 运行已配置 Superagent 的 Web profile，例如在该 profile 尚未运行时执行 `dsh --profile superagent-dev --no-open`，将示例 profile 名替换为你的实际名称。已由服务管理器启动的实例直接查看启动日志。
 

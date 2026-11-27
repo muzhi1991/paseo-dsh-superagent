@@ -280,9 +280,10 @@ export async function readTranscript({
         (usage.cacheReadTokens || 0) +
         (usage.cacheWriteTokens || 0) +
         (usage.outputTokens || 0),
-      pressure: pressure?.contextWindow
-        ? Math.round((100 * pressure.pressureTokens) / pressure.contextWindow)
-        : undefined,
+      pressure:
+        pressure?.contextWindow > 0 && Number.isFinite(pressure.pressureTokens)
+          ? Math.round((100 * pressure.pressureTokens) / pressure.contextWindow)
+          : undefined,
     },
   };
 }

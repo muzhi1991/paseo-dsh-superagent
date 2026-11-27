@@ -111,8 +111,9 @@ export async function rpc(
   return body.result.value;
 }
 export async function target(expected?: string) {
-  const c = await config(),
-    s = await state(c),
+  const c = await config();
+  if (!c.cookie) throw Error("请先在「Paseo 设置 → 插件 → DSH Superagent → DSH 实例」填写启动令牌，点「验证并保存」。");
+  const s = await state(c),
     id = s.masterId as string,
     instance = c.url + "#" + id;
   if (expected !== undefined && instance !== expected)
@@ -165,7 +166,14 @@ export async function check({
       request: { sessionId: s.masterId },
     });
     status.router = projection?.kind === "sequenced";
-    if (!status.router) throw Error("已检测到 Superagent，Router 主会话尚不可读取。");
+    if (!status.router) {
+      if (s.setup?.problem) {
+        const detail = s.setup.problem.detail;
+        throw Error("已检测到 Superagent，Router 主会话尚未就绪。请先在 DSH Web 的 Superagent 面板完成部署检查，再回来验证。" +
+          (typeof detail === "string" ? " DSH：" + detail : ""));
+      }
+      throw Error("已检测到 Superagent，Router 主会话尚不可读取。");
+    }
     if (save) {
       await persist(c);
       status.saved = true;

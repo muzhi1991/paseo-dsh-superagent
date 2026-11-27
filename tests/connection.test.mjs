@@ -10,14 +10,14 @@ test("verify a candidate without changing the active instance; preserve the conn
   const original=process.env.PASEO_HOME;
   process.env.PASEO_HOME=home;
   t.after(async()=>{if(original===undefined)delete process.env.PASEO_HOME;else process.env.PASEO_HOME=original;await rm(home,{recursive:true,force:true})});
-  const {check,config,directory,rpc}=await import("../server/connection.ts");
-  async function host(installed){
+  const {check,config,directory,rpc,target}=await import("../server/connection.ts");
+  async function host(installed,pending=false){
     const server=createServer(async(req,res)=>{
       if(req.url==="/?token=valid"){res.writeHead(303,{"set-cookie":"dsh-auth-test=test; HttpOnly","location":"/"});res.end();return}
-      if(installed&&req.url==="/orchestrator/api/state"){res.end(JSON.stringify({masterId:"router-test",paused:false,setup:{},load:{}}));return}
+      if(installed&&req.url==="/orchestrator/api/state"){res.end(JSON.stringify({masterId:"router-test",paused:false,setup:pending?{problem:{detail:"The GitHub Source names no repository."}}:{},load:{}}));return}
       if(req.url==="/api/session/projections"&&req.headers.cookie==="dsh-auth-test=test"){
         const chunks=[];for await(const chunk of req)chunks.push(chunk);
-        const body=JSON.parse(Buffer.concat(chunks));res.end(JSON.stringify({rpcId:body.rpcId,result:{ok:true,value:{kind:"sequenced"}}}));return;
+        const body=JSON.parse(Buffer.concat(chunks));res.end(JSON.stringify({rpcId:body.rpcId,result:{ok:true,value:pending?null:{kind:"sequenced"}}}));return;
       }
       res.writeHead(req.url.startsWith("/?token=")||req.url.startsWith("/api/")?401:404);res.end();
     });
@@ -26,11 +26,17 @@ test("verify a candidate without changing the active instance; preserve the conn
     return "http://127.0.0.1:"+server.address().port;
   }
   const first=await host(true),second=await host(true),plain=await host(false);
+  await assert.rejects(target(), /验证并保存/);
   assert.equal((await check({url:first,token:"valid",save:false})).router,true);
+  await assert.rejects(target(), /验证并保存/);
   assert.notEqual((await config()).url,first);
   assert.equal((await check({url:first,token:"valid",save:true})).saved,true);
   assert.equal((await stat(join(directory,"connection.json"))).mode&0o777,0o600);
   assert.equal((await check({url:first,token:"",save:false})).router,true);
+  const pending=await check({url:await host(true,true),token:"valid",save:true});
+  assert.ok(pending.superagent&&!pending.router&&!pending.saved);
+  assert.match(pending.detail,/完成部署检查.*GitHub Source/);
+  assert.equal((await config()).url,first);
   const missing=await check({url:plain,token:"",save:true});
   assert.ok(missing.reachable&&!missing.superagent&&!missing.saved);
   const invalid=await check({url:second,token:"wrong",save:true});

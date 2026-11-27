@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { groupTurns } from "../shared/transcript.ts";
+import { groupTurns, transcript } from "../shared/transcript.ts";
 
 test("read the exact image reference from its Router event and preserve image-only replies", async (t) => {
   const previous = process.env.PASEO_HOME;
@@ -15,13 +15,13 @@ test("read the exact image reference from its Router event and preserve image-on
     await rm(home, { recursive: true, force: true });
   });
   const { persist } = await import("../server/connection.ts");
-  const { projectEvents, readImageAttachment } = await import(
+  const { projectEvents, readImageAttachment, readTranscript } = await import(
     "../server/transcript.ts"
   );
   const url = "http://127.0.0.1:3083",
     sessionId = "test-router",
     instance = url + "#" + sessionId;
-  await persist({ url, cookie: "" });
+  await persist({ url, cookie: "dsh-auth-test=session" });
   const attachment = {
     attachmentId: "photo",
     name: "photo.png",
@@ -53,6 +53,7 @@ test("read the exact image reference from its Router event and preserve image-on
   assert.equal(turn.results.get("call-1").files[0].id, "photo");
   assert.equal(turn.answer.files[0].width, 12);
   let reads = 0;
+  const pressure = { contextWindow: 1000 };
   t.mock.method(globalThis, "fetch", async (path, init) => {
     if (new URL(path).pathname === "/orchestrator/api/state")
       return Response.json({
@@ -69,7 +70,13 @@ test("read the exact image reference from its Router event and preserve image-on
       },
     } = JSON.parse(init.body);
     let value;
-    if (method === "session/page") {
+    if (method === "session/projections") {
+      value = {
+        kind: "sequenced",
+        asOfSeq: 4,
+        values: { contextPressure: pressure },
+      };
+    } else if (method === "session/page") {
       assert.equal(request.address.sessionId, sessionId);
       value = {
         records: rows.filter((r) => r.event.seq === request.throughSeq),
@@ -82,6 +89,13 @@ test("read the exact image reference from its Router event and preserve image-on
     }
     return Response.json({ rpcId, result: { ok: true, value } });
   });
+  // Upstream publishes the window size before it has a token count (e.g. after a failed turn).
+  const firstPage = transcript.output.parse(await readTranscript({ instance }));
+  assert.equal(firstPage.stats.pressure, undefined);
+  pressure.pressureTokens = 0;
+  assert.equal((await readTranscript({ instance })).stats.pressure, 0);
+  pressure.pressureTokens = 530;
+  assert.equal((await readTranscript({ instance })).stats.pressure, 53);
   for (const seq of [1, 3, 4]) {
     assert.deepEqual(
       await readImageAttachment({ instance, seq, id: "photo" }),
