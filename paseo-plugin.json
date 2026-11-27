@@ -1,6 +1,18 @@
 {
   "id": "paseo-dsh-superagent",
   "name": "DSH Superagent",
-  "description": "通过 Paseo 查看 Superagent 工单并联系 Router 主会话",
-  "requirements": { "paseo": ">=0.17.5" }
+  "description": "Review Superagent tickets and continue your DSH Router conversation in Paseo.",
+  "requirements": {
+    "paseo": ">=0.17.5"
+  },
+  "translations": {
+    "zh-CN": {
+      "description": "在 Paseo 查看 Superagent 工单，并继续 DSH 中的主会话。"
+    }
+  },
+  "media": [
+    "assets/desktop-overview.png",
+    "assets/mobile-overview.png",
+    "assets/mobile-router.png"
+  ]
 }
