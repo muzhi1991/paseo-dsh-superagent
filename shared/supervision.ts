@@ -44,7 +44,7 @@ export const routeSchema = z.object({
 export type Route = z.infer<typeof routeSchema>;
 export const view = defineRpc({
   name: "supervision.view",
-  input: routeSchema,
+  input: routeSchema.extend({ instance: z.string() }),
   output: z.object({
     instance: z.string(),
     paused: z.boolean(),

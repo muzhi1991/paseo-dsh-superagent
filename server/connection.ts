@@ -10,7 +10,8 @@ export const directory = join(
 );
 const path = join(directory, "connection.json");
 type Config = { url: string; cookie: string };
-export async function config(): Promise<Config> {
+type SavedConfig = Config & { revision?: string };
+export async function config(): Promise<SavedConfig> {
   try {
     return JSON.parse(await readFile(path, "utf8"));
   } catch (e) {
@@ -18,12 +19,29 @@ export async function config(): Promise<Config> {
     return { url: "http://127.0.0.1:3083", cookie: "" };
   }
 }
-export async function persist(c: Config) {
-  await mkdir(directory, { recursive: true, mode: 0o700 });
-  const temp = path + "." + randomUUID();
-  await writeFile(temp, JSON.stringify(c), { mode: 0o600 });
-  await rename(temp, path);
+let saving = Promise.resolve();
+export function persist(c: Config, expected?: SavedConfig) {
+  const write = saving.then(async () => {
+    if (expected) {
+      const current = await config();
+      if (
+        current.revision !== expected.revision ||
+        current.url !== expected.url ||
+        current.cookie !== expected.cookie
+      )
+        throw Error("另一端已更新 DSH 连接，请核对目标实例后再保存。");
+    }
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const revision = randomUUID(),
+      temp = path + "." + revision;
+    await writeFile(temp, JSON.stringify({ ...c, revision }), { mode: 0o600 });
+    await rename(temp, path);
+  });
+  saving = write.catch(() => {});
+  return write;
 }
+// An explicit refusal is distinct from losing a response after DSH may have accepted a write.
+export class DshRefusal extends Error {}
 function origin(input: string) {
   const url = new URL(input);
   if (
@@ -59,7 +77,7 @@ export async function request(c: Config, path: string, init: RequestInit = {}) {
       : c.cookie
         ? "DSH 未接受 Paseo 已保存的登录凭据，凭据可能已过期"
         : "Paseo 尚未登录这个 DSH 实例";
-    throw Error(
+    throw new DshRefusal(
       `已连接到 DSH，但${reason}（HTTP 401）。请从该实例的启动终端或日志中找到最近一次启动的 dsh web: 链接，复制 token 参数，填入「Paseo 设置 → 插件 → DSH Superagent → DSH 实例」，然后点「验证并保存」。`,
     );
   }
@@ -100,24 +118,49 @@ export async function rpc(
       payload: { args },
     }),
   });
-  if (!r.ok)
-    throw Error("DSH 会话接口 HTTP " + r.status);
+  if (r.status === 429) {
+    await r.body?.cancel();
+    throw new DshRefusal("DSH 会话接口请求过于频繁（HTTP 429），请稍后重试。");
+  }
+  if (!r.ok) throw Error("DSH 会话接口 HTTP " + r.status);
   const body = (await r.json()) as {
     rpcId: string;
-    result?: { ok: boolean; value: any; error?: { message: string } };
+    result?: {
+      ok: boolean;
+      value: any;
+      error?: { message: string; code?: string };
+    };
   };
-  if (body.rpcId !== rpcId || !body.result?.ok)
-    throw Error("DSH: " + (body.result?.error?.message || "无效响应"));
+  if (body.rpcId !== rpcId || !body.result)
+    throw Error("DSH 会话接口返回无效回执");
+  if (!body.result.ok) {
+    const error = body.result.error;
+    const message = "DSH: " + (error?.message || "无效响应");
+    if (
+      [
+        "gateway/bad-request",
+        "session/attachment-invalid",
+        "session/not-found",
+        "session/model-unavailable",
+        "session/agent-busy",
+      ].includes(error?.code ?? "")
+    )
+      throw new DshRefusal(message);
+    throw Error(message);
+  }
   return body.result.value;
 }
 export async function target(expected?: string) {
   const c = await config();
-  if (!c.cookie) throw Error("请先在「Paseo 设置 → 插件 → DSH Superagent → DSH 实例」填写启动令牌，点「验证并保存」。");
+  if (!c.cookie)
+    throw Error(
+      "请先在「Paseo 设置 → 插件 → DSH Superagent → DSH 实例」填写启动令牌，点「验证并保存」。",
+    );
   const s = await state(c),
     id = s.masterId as string,
     instance = c.url + "#" + id;
   if (expected !== undefined && instance !== expected)
-    throw Error("实例已切换，请返回面板并重新打开主会话。");
+    throw Error("实例已切换，请回到面板，点「重新读取」以打开当前实例。");
   return { c, s, id, instance };
 }
 export async function check({
@@ -146,8 +189,6 @@ export async function check({
     const r = await request(c, "/");
     status.reachable = true;
     await r.body?.cancel();
-    const s = await state(c);
-    status.superagent = true;
     if (token.trim()) {
       const login = await request(
         { url: address, cookie: "" },
@@ -161,6 +202,8 @@ export async function check({
       if (!cookie) throw Error("DSH 未接受登录令牌。");
       c.cookie = cookie;
     }
+    const s = await state(c);
+    status.superagent = true;
     if (!c.cookie) throw Error("首次连接此实例需要 DSH Web 启动令牌。");
     const projection = await rpc(c, "session/projections", {
       request: { sessionId: s.masterId },
@@ -169,13 +212,15 @@ export async function check({
     if (!status.router) {
       if (s.setup?.problem) {
         const detail = s.setup.problem.detail;
-        throw Error("已检测到 Superagent，Router 主会话尚未就绪。请先在 DSH Web 的 Superagent 面板完成部署检查，再回来验证。" +
-          (typeof detail === "string" ? " DSH：" + detail : ""));
+        throw Error(
+          "已检测到 Superagent，Router 主会话尚未就绪。请先在 DSH Web 的 Superagent 面板完成部署检查，再回来验证。" +
+            (typeof detail === "string" ? " DSH：" + detail : ""),
+        );
       }
       throw Error("已检测到 Superagent，Router 主会话尚不可读取。");
     }
     if (save) {
-      await persist(c);
+      await persist(c, previous);
       status.saved = true;
     }
     status.detail = "已验证 Superagent 和 Router 主会话";

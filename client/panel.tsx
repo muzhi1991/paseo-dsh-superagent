@@ -1,3 +1,4 @@
+import { activeInstance } from "../shared/api";
 import { MobileFrame } from "./mobile-frame";
 import { useState, useRef } from "react";
 import {
@@ -11,7 +12,11 @@ import {
 } from "react-native";
 import { type PluginScreenProps, useRpc } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/ui";
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   view,
   mutate,
@@ -31,10 +36,32 @@ type Confirmation = {
   instance: string;
   after?: () => void;
 };
-export function Panel(
-  props: PluginScreenProps & {
-    closePanel?: () => void;
-    openLinkedAgent?: (id: string) => void;
+type PanelProps = PluginScreenProps & {
+  closePanel?: () => void;
+  openLinkedAgent?: (id: string) => void;
+};
+export function Panel(props: PanelProps) {
+  const resolve = useRpc(activeInstance);
+  const current = useQuery({
+    queryKey: ["dsh-active-instance", props.host.id],
+    queryFn: () => resolve({}),
+    retry: false,
+  });
+  return (
+    <InstancePanel
+      key={JSON.stringify([props.host.id, current.data])}
+      {...props}
+      instance={current.data}
+      connectionError={current.error}
+      reconnect={() => current.refetch()}
+    />
+  );
+}
+function InstancePanel(
+  props: PanelProps & {
+    instance?: string;
+    connectionError: Error | null;
+    reconnect: () => Promise<unknown>;
   },
 ) {
   const { theme, host } = props,
@@ -56,14 +83,15 @@ export function Panel(
     write = useRpc(mutate),
     cache = useQueryClient();
   const q = useInfiniteQuery({
-    queryKey: ["supervision", host.id, route],
+    queryKey: ["supervision", host.id, props.instance, route],
     initialPageParam: 0,
-    queryFn: ({ pageParam }) => read({ ...route, offset: pageParam }),
+    queryFn: ({ pageParam }) =>
+      read({ ...route, offset: pageParam, instance: props.instance! }),
     getNextPageParam: (last) =>
       Number.isInteger(last.data?.next_offset)
         ? (last.data.next_offset as number)
         : undefined,
-    enabled: !chat,
+    enabled: !!props.instance && !chat,
     retry: false,
     refetchInterval: route.page === "设置" ? false : 10000,
   });
@@ -118,13 +146,14 @@ export function Panel(
     <Router
       {...props}
       embeddedBack={props.closePanel ? sessionBack : undefined}
-      expected={result?.instance}
+      expected={props.instance}
       back={returnToPanel}
     />
   );
   if (chat && !props.closePanel) return conversation;
   const field = (
     <TextInput
+      editable={!!props.instance}
       autoFocus={small && searching}
       accessibilityLabel="搜索工单、线程或触发"
       placeholder="搜索工单、线程或触发"
@@ -151,6 +180,7 @@ export function Panel(
     <Surface.Provider
       value={{
         theme,
+        hostId: host.id,
         compact: small,
         fullscreen: !!props.closePanel,
         instance: result?.instance,
@@ -218,6 +248,7 @@ export function Panel(
               {small ? (
                 <Action
                   theme={theme}
+                  disabled={!props.instance}
                   label="搜索"
                   onPress={() => showSearch(!searching)}
                 >
@@ -230,7 +261,11 @@ export function Panel(
               ) : (
                 field
               )}
-              <Action theme={theme} onPress={() => setChat(true)}>
+              <Action
+                theme={theme}
+                disabled={!props.instance}
+                onPress={() => setChat(true)}
+              >
                 主 Session ↗
               </Action>
             </>
@@ -267,7 +302,8 @@ export function Panel(
               <Pressable
                 key={t}
                 accessibilityRole="tab"
-                accessibilityState={{ selected: t === selected }}
+                disabled={!props.instance}
+                accessibilityState={{ selected: t === selected, disabled: !props.instance }}
                 aria-selected={t === selected}
                 onPress={() => {
                   setProblem("");
@@ -327,11 +363,21 @@ export function Panel(
               theme={theme}
               text={
                 problem ||
-                (q.error ? errorText(q.error) : q.isPending ? "正在读取…" : "")
+                (props.connectionError || q.error
+                  ? errorText(props.connectionError || q.error)
+                  : q.isPending
+                    ? "正在读取…"
+                    : "")
               }
             />
-            {q.error && (
-              <Action theme={theme} onPress={() => void q.refetch()}>
+            {(props.connectionError || q.error) && (
+              <Action
+                theme={theme}
+                onPress={async () => {
+                  await props.reconnect();
+                  if (props.instance) await q.refetch();
+                }}
+              >
                 重新读取
               </Action>
             )}

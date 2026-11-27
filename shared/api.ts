@@ -2,6 +2,11 @@ import { imageMediaType } from "./image";
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 
+export const activeInstance = defineRpc({
+  name: "connection.target",
+  input: z.object({}),
+  output: z.string(),
+});
 export const connection = defineRpc({
   name: "connection.read",
   input: z.object({}),

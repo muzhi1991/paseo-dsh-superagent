@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { ScrollView, Text, TextInput, View } from "react-native";
 import { useRpc, type PluginSurfaceProps } from "@getpaseo/plugin/client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "../shared/api";
 import { Action, errorText, Notice } from "./common";
 
 export function ConnectionSettings({ theme, host }: PluginSurfaceProps) {
+  const cache = useQueryClient();
   const read = useRpc(api.connection),
     verify = useRpc(api.verify);
   const current = useQuery({
@@ -17,7 +18,9 @@ export function ConnectionSettings({ theme, host }: PluginSurfaceProps) {
     [result, report] = useState(""),
     [busy, lock] = useState(false);
   const url = edited ?? current.data?.url ?? "";
-  const hasCredential = !!token.trim() || (current.data?.authenticated && url.trim() === current.data.url);
+  const hasCredential =
+    !!token.trim() ||
+    (current.data?.authenticated && url.trim() === current.data.url);
   const field = {
     borderWidth: 1,
     borderColor: theme.colors.surface2,
@@ -39,7 +42,12 @@ export function ConnectionSettings({ theme, host }: PluginSurfaceProps) {
         ].join("\n"),
       );
       if (r.saved) {
-        await current.refetch();
+        await Promise.all([
+          current.refetch(),
+          cache.invalidateQueries({
+            queryKey: ["dsh-active-instance", host.id],
+          }),
+        ]);
         setToken("");
       }
     } catch (e) {
@@ -89,7 +97,9 @@ export function ConnectionSettings({ theme, host }: PluginSurfaceProps) {
         DSH Web 登录令牌（首次连接必填）
       </Text>
       <Text style={{ color: theme.colors.foregroundMuted, fontSize: 13 }}>
-        在运行 Superagent 的 Web profile 启动终端或服务日志里找到「dsh web:」登录链接，复制 token 参数的值。使用 Desktop 安装的 dsh 命令启动时，链接也显示在终端。
+        在运行 Superagent 的 Web profile 启动终端或服务日志里找到「dsh
+        web:」登录链接，复制 token 参数的值。使用 Desktop 安装的 dsh
+        命令启动时，链接也显示在终端。
       </Text>
       <TextInput
         accessibilityLabel="DSH Web 登录令牌"

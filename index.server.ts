@@ -26,6 +26,7 @@ import { dispatch } from "./server/dispatch";
 import { readPanel } from "./server/panel";
 
 export default function contribute(server: PluginServerContext) {
+  server.handle(api.activeInstance, async () => (await target()).instance);
   server.handle(view, readSupervision);
   server.handle(transcript, readTranscript);
   server.handle(eventDetail, readEventDetail);

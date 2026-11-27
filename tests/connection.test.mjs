@@ -14,7 +14,7 @@ test("verify a candidate without changing the active instance; preserve the conn
   async function host(installed,pending=false){
     const server=createServer(async(req,res)=>{
       if(req.url==="/?token=valid"){res.writeHead(303,{"set-cookie":"dsh-auth-test=test; HttpOnly","location":"/"});res.end();return}
-      if(installed&&req.url==="/orchestrator/api/state"){res.end(JSON.stringify({masterId:"router-test",paused:false,setup:pending?{problem:{detail:"The GitHub Source names no repository."}}:{},load:{}}));return}
+      if(installed&&req.url==="/orchestrator/api/state"){if(req.headers.cookie!=="dsh-auth-test=test"){res.writeHead(401);res.end();return}res.end(JSON.stringify({masterId:"router-test",paused:false,setup:pending?{problem:{detail:"The GitHub Source names no repository."}}:{},load:{}}));return}
       if(req.url==="/api/session/projections"&&req.headers.cookie==="dsh-auth-test=test"){
         const chunks=[];for await(const chunk of req)chunks.push(chunk);
         const body=JSON.parse(Buffer.concat(chunks));res.end(JSON.stringify({rpcId:body.rpcId,result:{ok:true,value:pending?null:{kind:"sequenced"}}}));return;
@@ -46,5 +46,6 @@ test("verify a candidate without changing the active instance; preserve the conn
   await assert.rejects(rpc({url:first,cookie:""},"session/projections",{}),/尚未登录.*HTTP 401/);
   assert.equal((await config()).url,first);
   assert.equal((await check({url:second,token:"",save:true})).router,false);
-  assert.deepEqual(await config(),{url:first,cookie:"dsh-auth-test=test"});
+  assert.equal((await config()).url,first);
+  assert.equal((await config()).cookie,"dsh-auth-test=test");
 });

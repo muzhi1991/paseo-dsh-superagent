@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -25,6 +25,7 @@ test("match the Web filters, retain cursors, and verify the same Router before m
     admissionContextTimeoutMs: 2000,
   };
   const origin = "http://127.0.0.1:3083";
+  const instance = origin + "#router";
   await persist({ url: origin, cookie: "dsh-auth-test=session" });
   t.mock.method(globalThis, "fetch", async (input, init) => {
     const u = new URL(input),
@@ -33,7 +34,7 @@ test("match the Web filters, retain cursors, and verify the same Router before m
       return Response.json({
         masterId: "router",
         paused: false,
-        setup: {},
+        setup: { machine: { stateDir: home } },
         load: { running: 0, queued: 0, maxWorkers: 1 },
       });
     if (u.pathname === "/api/session/projections")
@@ -58,6 +59,13 @@ test("match the Web filters, retain cursors, and verify the same Router before m
         },
       });
     calls.push({ u, init, body });
+    if (u.pathname === "/orchestrator/api/tickets/42")
+      return Response.json({
+        title: "Fixture 42",
+        stage: "working",
+        assignments: [],
+        threads: [],
+      });
     if (u.pathname === "/api/settings/mutate") {
       const { ns, expectedRevision, ops } = body.payload.args;
       assert.equal(ns, "dsh-superagent");
@@ -81,24 +89,24 @@ test("match the Web filters, retain cursors, and verify the same Router before m
     ["评估", "kind", "accept,reopen"],
     ["执行", "state", "open"],
   ]) {
-    await readSupervision({ page, offset: 20 });
+    await readSupervision({ instance, page, offset: 20 });
     assert.equal(calls.at(-1).u.searchParams.get(key), value);
     assert.equal(calls.at(-1).u.searchParams.get("offset"), "20");
   }
   await readSupervision({
+    instance,
     page: "线程",
     id: "git:team/project",
     before: "time|id",
   });
   assert.ok(calls.at(-1).u.pathname.endsWith("git%3Ateam%2Fproject"));
   assert.equal(calls.at(-1).u.searchParams.get("before"), "time|id");
-  const instance = origin + "#router",
-    command = {
-      kind: "settings",
-      block: "executor",
-      value: { maxWorkers: 1 },
-      revision: 3,
-    };
+  const command = {
+    kind: "settings",
+    block: "executor",
+    value: { maxWorkers: 1 },
+    revision: 3,
+  };
   await change({ instance, command });
   assert.equal(calls.at(-1).init.method, "PUT");
   assert.deepEqual(calls.at(-1).body, {
@@ -110,7 +118,8 @@ test("match the Web filters, retain cursors, and verify the same Router before m
     /已有新版本/,
   );
   const readForm = async () =>
-    (await readSupervision({ page: "设置", filter: "deployment" })).data.form;
+    (await readSupervision({ instance, page: "设置", filter: "deployment" }))
+      .data.form;
   assert.deepEqual(await readForm(), {
     writable: true,
     revision: 8,
@@ -152,11 +161,33 @@ test("match the Web filters, retain cursors, and verify the same Router before m
     }).success,
     false,
   );
+  const { readPanel } = await import("../server/panel.ts");
+  await mkdir(join(home, "paseo-bindings"));
+  for (const file of ["{", JSON.stringify({ agentId: "agent-42" })]) {
+    await writeFile(join(home, "paseo-bindings", "42.json"), file);
+    const expected = file === "{" ? undefined : "agent-42";
+    const route = { instance, page: "工单", id: "42" };
+    const detail = await readSupervision(route);
+    assert.equal(detail.data.title, "Fixture 42");
+    assert.equal(detail.agent, expected);
+    assert.equal((await readPanel(route)).agent, expected);
+  }
   const count = calls.length;
   await assert.rejects(
     change({ instance: origin + "#old", command }),
     /实例已切换/,
   );
+  const other = "http://127.0.0.1:6301";
+  await persist({ url: other, cookie: "dsh-auth-test=session-b" });
+  for (const route of [
+    { page: "工单", id: "42" },
+    { page: "执行", offset: 20 },
+  ]) {
+    await assert.rejects(readSupervision({ ...route, instance }), /实例已切换/);
+  }
+  await assert.rejects(change({ instance, command }), /实例已切换/);
+  assert.equal(calls.length, count);
+  await persist({ url: origin, cookie: "dsh-auth-test=session" });
   authorized = false;
   await assert.rejects(change({ instance, command }), /HTTP 401/);
   assert.equal(calls.length, count);

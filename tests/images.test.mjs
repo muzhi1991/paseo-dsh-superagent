@@ -83,7 +83,11 @@ test("read the exact image reference from its Router event and preserve image-on
       };
     } else {
       assert.equal(method, "session/attachment");
-      assert.deepEqual(request, { sessionId, attachment });
+      assert.deepEqual(request, {
+        sessionId,
+        attachmentId: attachment.attachmentId,
+        attachment,
+      });
       reads++;
       value = { attachment, data: "cG5n" };
     }
@@ -96,6 +100,7 @@ test("read the exact image reference from its Router event and preserve image-on
   assert.equal((await readTranscript({ instance })).stats.pressure, 0);
   pressure.pressureTokens = 530;
   assert.equal((await readTranscript({ instance })).stats.pressure, 53);
+  assert.equal(reads, 0, "transcript pages contain references only");
   for (const seq of [1, 3, 4]) {
     assert.deepEqual(
       await readImageAttachment({ instance, seq, id: "photo" }),

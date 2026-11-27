@@ -1,8 +1,7 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { boundAgent } from "./bindings.ts";
 import type { RpcInput } from "@getpaseo/plugin";
-import { panel } from "../shared/api";
-import { target, management } from "./connection";
+import type { panel } from "../shared/api";
+import { target, management } from "./connection.ts";
 
 type Row = { id: string; title: string; detail: string; ticket?: boolean };
 const stages: Record<string, string> = {
@@ -106,26 +105,7 @@ export async function readPanel(input: RpcInput<typeof panel>) {
           row("t" + i, v.title || v.key, v.key),
         ),
       ];
-      if (
-        ["localhost", "127.0.0.1", "[::1]"].includes(new URL(c.url).hostname) &&
-        typeof s.setup?.machine?.stateDir === "string"
-      ) {
-        try {
-          const b = JSON.parse(
-            await readFile(
-              join(
-                s.setup.machine.stateDir,
-                "paseo-bindings",
-                input.id + ".json",
-              ),
-              "utf8",
-            ),
-          );
-          if (typeof b.agentId === "string") agent = b.agentId;
-        } catch (e) {
-          if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-        }
-      }
+      agent = await boundAgent(c.url, s.setup?.machine?.stateDir, input.id);
       break;
     }
     case "设置":

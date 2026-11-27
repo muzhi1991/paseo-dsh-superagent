@@ -63,6 +63,7 @@ export function Prompts({ v, instance }: { v: any; instance: string }) {
   const {
     theme: { colors },
     compact,
+    hostId,
     confirm,
   } = useSurface();
   const [tab, setTab] = useState("edit"),
@@ -77,7 +78,7 @@ export function Prompts({ v, instance }: { v: any; instance: string }) {
   const edit = (next: Config) => setDraft({ config: next, revision: rev });
   const read = useRpc(previewPrompts),
     preview = useQuery({
-      queryKey: ["superagent-prompt-preview", instance, config],
+      queryKey: ["superagent-prompt-preview", hostId, instance, config],
       queryFn: () => read({ instance, config }),
       enabled: tab === "full",
       retry: false,

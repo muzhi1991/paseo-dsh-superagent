@@ -6,6 +6,7 @@ import type { Theme } from "./common";
 
 export const Surface = createContext<{
   theme: Theme;
+  hostId: string;
   compact: boolean;
   fullscreen: boolean;
   instance?: string;

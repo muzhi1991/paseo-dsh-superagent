@@ -327,7 +327,8 @@ export async function readImageAttachment({
   )?.attachment;
   if (!attachment) throw Error("这条会话记录没有该图片");
   const value = await rpc(c, "session/attachment", {
-    request: { sessionId: id, attachment },
+    // Older controllers authorize by ID; newer ones read the full stored reference.
+    request: { sessionId: id, attachmentId, attachment },
   });
   return {
     mime: imageMediaType.parse(value.attachment.mediaType),

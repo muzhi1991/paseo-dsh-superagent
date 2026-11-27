@@ -1,5 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { boundAgent } from "./bindings.ts";
 import { target, management, request, rpc } from "./connection.ts";
 import { filters, type Route, type Command } from "../shared/supervision.ts";
 
@@ -36,8 +35,8 @@ async function deployment(c: Parameters<typeof rpc>[0]) {
     },
   };
 }
-export async function readSupervision(r: Route) {
-  const { c, s, instance } = await target();
+export async function readSupervision(r: Route & { instance: string }) {
+  const { c, s, instance } = await target(r.instance);
   const read = (path: string, params: Record<string, string> = {}) =>
     management(c, path + "?" + new URLSearchParams(params));
   const offset = String(r.offset || 0);
@@ -91,22 +90,7 @@ export async function readSupervision(r: Route) {
     case "工单":
       if (!r.id || !/^[-\w]+$/.test(r.id)) throw Error("无效工单号");
       data = await read("tickets/" + segment(r.id));
-      if (
-        ["localhost", "127.0.0.1", "[::1]"].includes(new URL(c.url).hostname) &&
-        typeof s.setup?.machine?.stateDir === "string"
-      ) {
-        try {
-          const b = JSON.parse(
-            await readFile(
-              join(s.setup.machine.stateDir, "paseo-bindings", r.id + ".json"),
-              "utf8",
-            ),
-          );
-          if (typeof b.agentId === "string") agent = b.agentId;
-        } catch (e) {
-          if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-        }
-      }
+      agent = await boundAgent(c.url, s.setup?.machine?.stateDir, r.id);
       break;
     case "设置":
       if (r.filter === "deployment")
