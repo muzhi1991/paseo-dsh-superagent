@@ -45,12 +45,25 @@ function origin(input: string) {
   return url.origin;
 }
 export async function request(c: Config, path: string, init: RequestInit = {}) {
-  return fetch(c.url + path, {
+  const response = await fetch(c.url + path, {
     ...init,
     redirect: "manual",
     signal: AbortSignal.timeout(20000),
     headers: { ...(c.cookie ? { cookie: c.cookie } : {}), ...init.headers },
   });
+  // The unauthenticated root probe checks only whether the instance answers.
+  if (response.status === 401 && path !== "/") {
+    await response.body?.cancel();
+    const reason = path.startsWith("/?")
+      ? "DSH 未接受刚填写的登录令牌"
+      : c.cookie
+        ? "DSH 未接受 Paseo 已保存的登录凭据，凭据可能已过期"
+        : "Paseo 尚未登录这个 DSH 实例";
+    throw Error(
+      `已连接到 DSH，但${reason}（HTTP 401）。请从该实例的启动终端或日志中找到最近一次启动的 dsh web: 链接，复制 token 参数，填入「Paseo 设置 → 插件 → DSH Superagent → DSH 实例」，然后点「验证并保存」。`,
+    );
+  }
+  return response;
 }
 export async function management(c: Config, route: string): Promise<any> {
   const r = await request(c, "/orchestrator/api/" + route, {
@@ -88,7 +101,7 @@ export async function rpc(
     }),
   });
   if (!r.ok)
-    throw Error("DSH 会话接口 HTTP " + r.status + "，请检查设置中的登录令牌。");
+    throw Error("DSH 会话接口 HTTP " + r.status);
   const body = (await r.json()) as {
     rpcId: string;
     result?: { ok: boolean; value: any; error?: { message: string } };
