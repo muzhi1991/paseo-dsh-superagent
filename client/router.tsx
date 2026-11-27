@@ -379,7 +379,7 @@ export function Router({
             maxWidth: 738,
             alignSelf: "center",
             paddingHorizontal: 12,
-            paddingBottom: compact ? (Platform.OS === "ios" ? 34 : 26) : 12,
+            paddingBottom: 12,
             paddingTop: 4,
             gap: 7,
           }}
