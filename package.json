@@ -15,7 +15,8 @@
     "shared/"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs"
   },
   "devDependencies": {
     "@getpaseo/plugin": "0.17.5",
