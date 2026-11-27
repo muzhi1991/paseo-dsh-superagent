@@ -179,36 +179,41 @@ function Fold({
     </View>
   );
 }
-function FileCard({ file }: { file: Attachment }) {
+function FileCard({ file, seq }: { file: Attachment; seq: number }) {
   const {
       theme: { colors: c },
       instance,
       hostId,
     } = useChat(),
     fetch = useRpc(imageAttachment);
+  const [decodeFailed, setDecodeFailed] = useState(false);
   const image = file.kind === "image" && !!file.id;
   const q = useQuery({
-    queryKey: ["router-image", hostId, instance, file.id],
-    queryFn: () => fetch({ instance, id: file.id! }),
+    queryKey: ["router-image", hostId, instance, seq, file.id],
+    queryFn: () => fetch({ instance, seq, id: file.id! }),
     enabled: image,
     staleTime: Infinity,
     retry: false,
   });
-  if (image && q.data)
+  if (image && q.data && !decodeFailed) {
+    const ratio =
+      file.width && file.height ? file.width / file.height : 230 / 150;
     return (
       <Image
         source={{ uri: "data:" + q.data.mime + ";base64," + q.data.data }}
         accessibilityLabel={file.name}
         resizeMode="contain"
+        onError={() => setDecodeFailed(true)}
         style={{
           maxWidth: "100%",
-          width: 230,
-          height: 150,
+          width: Math.min(230, 180 * ratio),
+          aspectRatio: ratio,
           borderRadius: 12,
           backgroundColor: c.surface1,
         }}
       />
     );
+  }
   const ext = file.name.includes(".")
       ? file.name.split(".").pop()?.toUpperCase()
       : "文件",
@@ -250,8 +255,8 @@ function FileCard({ file }: { file: Attachment }) {
           {file.name}
         </Text>
         <Text style={{ fontSize: 12, color: c.foregroundMuted }}>
-          {image
-            ? q.error
+          {file.kind === "image"
+            ? !image || q.error || decodeFailed
               ? "图片无法预览"
               : "加载图片…"
             : [ext, size].filter(Boolean).join("  ")}
@@ -259,6 +264,15 @@ function FileCard({ file }: { file: Attachment }) {
       </View>
     </View>
   );
+}
+function EventFiles({ event }: { event: TranscriptEvent }) {
+  return event.files?.map((file, i) => (
+    <FileCard
+      file={file}
+      seq={event.seq}
+      key={event.seq + ":" + i + ":" + file.id}
+    />
+  ));
 }
 function Footer({
   event,
@@ -315,9 +329,7 @@ function Message({
     <View
       style={{ alignItems: user ? "flex-end" : "stretch", gap: 6, minWidth: 0 }}
     >
-      {event.files?.map((f, i) => (
-        <FileCard file={f} key={f.id || i} />
-      ))}
+      <EventFiles event={event} />
       {!!event.text &&
         (user ? (
           <View
@@ -374,6 +386,7 @@ function Trigger({ event: e }: { event: TranscriptEvent }) {
         这条通知触发了本轮回复。
       </Text>
       <Detail seq={e.seq} />
+      <EventFiles event={e} />
     </Fold>
   );
 }
@@ -393,6 +406,7 @@ function ProcessEntry({
     return (
       <Fold label={"上下文注入 " + (e.name || e.source || "")} icon="Layers">
         <Detail seq={e.seq} />
+        <EventFiles event={e} />
       </Fold>
     );
   if (e.kind === "call") {
@@ -408,6 +422,7 @@ function ProcessEntry({
           <>
             <Text style={{ color: c.foregroundMuted, fontSize: 12 }}>结果</Text>
             <Detail seq={result.seq} />
+            <EventFiles event={result} />
           </>
         )}
       </Fold>

@@ -1,3 +1,4 @@
+import { imageMediaType } from "./image";
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 
@@ -98,6 +99,7 @@ export const upload = defineRpc({
   input: target.extend({
     name: z.string().min(1).max(255),
     data: z.string().max(2_800_000),
+    mediaType: imageMediaType.optional(),
   }),
   output: z.string(),
 });

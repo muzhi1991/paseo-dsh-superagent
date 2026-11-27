@@ -1,5 +1,9 @@
 import { transcript, eventDetail, imageAttachment } from "./shared/transcript";
-import { readTranscript, readEventDetail } from "./server/transcript";
+import {
+  readTranscript,
+  readEventDetail,
+  readImageAttachment,
+} from "./server/transcript";
 import {
   view,
   mutate,
@@ -25,16 +29,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(view, readSupervision);
   server.handle(transcript, readTranscript);
   server.handle(eventDetail, readEventDetail);
-  server.handle(imageAttachment, async ({ instance, id: attachmentId }) => {
-    const { c, id } = await target(instance);
-    const v = await rpc(c, "session/attachment", {
-      request: { sessionId: id, attachmentId },
-    });
-    return imageAttachment.output.parse({
-      mime: v.attachment.mediaType,
-      data: v.data,
-    });
-  });
+  server.handle(imageAttachment, readImageAttachment);
   server.handle(promptVersions, async ({ instance, revision, offset }) => {
     const { c } = await target(instance);
     const params = new URLSearchParams();
@@ -93,12 +88,16 @@ export default function contribute(server: PluginServerContext) {
     });
     return true;
   });
-  server.handle(api.upload, async ({ instance, name, data }) => {
+  server.handle(api.upload, async ({ instance, name, data, mediaType }) => {
     const { c, id } = await target(instance);
     const r = await request(
       c,
       "/api/session/uploadFileBinary?" +
-        new URLSearchParams({ sessionId: id, name }),
+        new URLSearchParams({
+          sessionId: id,
+          name,
+          ...(mediaType ? { mediaType } : {}),
+        }),
       {
         method: "POST",
         headers: { "content-type": "application/octet-stream" },
@@ -109,9 +108,10 @@ export default function contribute(server: PluginServerContext) {
     const v = (await r.json()) as {
       ok: boolean;
       value?: { receiptId: string };
+      error?: { message?: string };
     };
     if (!v.ok || typeof v.value?.receiptId !== "string")
-      throw Error("DSH 未接收附件");
+      throw Error(v.error?.message || "DSH 未接收附件");
     return v.value.receiptId;
   });
   return () => {};

@@ -1,3 +1,4 @@
+import { imageMediaType } from "../shared/image.ts";
 import { rpc, target } from "./connection.ts";
 import type { TranscriptEvent, Attachment } from "../shared/transcript.ts";
 
@@ -5,7 +6,14 @@ type Part = {
   type: string;
   text?: string;
   name?: string;
-  attachment?: { attachmentId?: string; name?: string; bytes?: number };
+  attachment?: {
+    attachmentId?: string;
+    name?: string;
+    bytes?: number;
+    mediaType?: string;
+    width?: number;
+    height?: number;
+  };
 };
 type RecordEvent = {
   surfaceOp?: string;
@@ -31,6 +39,8 @@ function filesOf(parts: Part[]): Attachment[] {
               p.name ||
               (p.type === "image" ? "图片" : "附件"),
             bytes: p.attachment?.bytes,
+            width: p.attachment?.width,
+            height: p.attachment?.height,
           },
         ]
       : [],
@@ -125,6 +135,7 @@ export function projectEvents(
             : {
                 ...base,
                 kind,
+                files: filesOf(d.content || []),
                 source,
                 form:
                   source === "retry" && !d.content?.length
@@ -158,6 +169,7 @@ export function projectEvents(
         rows.push({
           ...base,
           kind: "result",
+          files: filesOf(d.message?.content || []),
           call: d.message?.toolCallId,
           error: d.message?.isError,
         });
@@ -239,14 +251,11 @@ export async function readTranscript({
     },
   };
 }
-export async function readEventDetail({
-  instance,
-  seq,
-}: {
-  instance: string;
-  seq: number;
-}) {
-  const { c, id } = await target(instance);
+async function eventAt(
+  c: Awaited<ReturnType<typeof target>>["c"],
+  id: string,
+  seq: number,
+) {
   const page = await rpc(c, "session/page", {
     request: {
       address: { kind: "session", sessionId: id },
@@ -258,6 +267,46 @@ export async function readEventDetail({
     (r: { event: RecordEvent }) => r.event.seq === seq,
   )?.event;
   if (!event) throw Error("这条记录已不可用");
+  return event;
+}
+export async function readImageAttachment({
+  instance,
+  seq,
+  id: attachmentId,
+}: {
+  instance: string;
+  seq: number;
+  id: string;
+}) {
+  const { c, id } = await target(instance);
+  const event = await eventAt(c, id, seq);
+  const content: Part[] =
+    event.type === "user/message" || event.type === "developer/message"
+      ? event.data.content
+      : event.type === "assistant/message" || event.type === "tool/result"
+        ? event.data.message?.content
+        : [];
+  const attachment = content?.find(
+    (p) => p.type === "image" && p.attachment?.attachmentId === attachmentId,
+  )?.attachment;
+  if (!attachment) throw Error("这条会话记录没有该图片");
+  const value = await rpc(c, "session/attachment", {
+    request: { sessionId: id, attachment },
+  });
+  return {
+    mime: imageMediaType.parse(value.attachment.mediaType),
+    data: value.data as string,
+  };
+}
+export async function readEventDetail({
+  instance,
+  seq,
+}: {
+  instance: string;
+  seq: number;
+}) {
+  const { c, id } = await target(instance);
+  const event = await eventAt(c, id, seq);
   const d = event.data;
   switch (event.type) {
     case "developer/message":

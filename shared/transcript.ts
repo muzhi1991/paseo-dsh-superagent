@@ -1,3 +1,4 @@
+import { imageMediaType } from "./image.ts";
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 const attachment = z.object({
@@ -5,6 +6,8 @@ const attachment = z.object({
   id: z.string().optional(),
   name: z.string(),
   bytes: z.number().optional(),
+  width: z.number().positive().optional(),
+  height: z.number().positive().optional(),
 });
 const event = z.object({
   seq: z.number(),
@@ -66,9 +69,13 @@ export const eventDetail = defineRpc({
 });
 export const imageAttachment = defineRpc({
   name: "router.image",
-  input: z.object({ instance: z.string(), id: z.string().min(1).max(256) }),
+  input: z.object({
+    instance: z.string(),
+    id: z.string().min(1).max(256),
+    seq: z.number().int().nonnegative(),
+  }),
   output: z.object({
-    mime: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif"]),
+    mime: imageMediaType,
     data: z.string(),
   }),
 });

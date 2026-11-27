@@ -1,5 +1,6 @@
+import { imageMediaType, type ImageMediaType } from "../shared/image";
 import { Platform } from "react-native";
-type FileLike = { name: string; size: number };
+type FileLike = { name: string; size: number; type: string };
 interface Input {
   type: string;
   multiple: boolean;
@@ -17,7 +18,9 @@ declare const FileReader: {
     onerror: (() => void) | null;
   };
 };
-export async function pickFiles(): Promise<{ name: string; data: string }[]> {
+export async function pickFiles(): Promise<
+  { name: string; data: string; mediaType?: ImageMediaType }[]
+> {
   if (Platform.OS !== "web")
     throw Error("当前 Paseo 原生插件 SDK 尚未提供设备文件选择器。");
   const input = document.createElement("input");
@@ -38,7 +41,12 @@ export async function pickFiles(): Promise<{ name: string; data: string }[]> {
         r.onerror = () => reject(Error("读取文件失败"));
         r.readAsDataURL(f);
       });
-      return { name: f.name, data };
+      const mime = imageMediaType.safeParse(f.type);
+      return {
+        name: f.name,
+        data,
+        ...(mime.success ? { mediaType: mime.data } : {}),
+      };
     }),
   );
 }
