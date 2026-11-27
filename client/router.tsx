@@ -5,6 +5,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useRpc, type PluginScreenProps } from "@getpaseo/plugin/client";
@@ -158,6 +159,7 @@ export function Router({
     await q.refetch();
   }
   const colors = theme.colors;
+  const compact = useWindowDimensions().width < 680;
   const closeChoices = () => {
     setChoices([]);
     setChosen(null);
@@ -169,23 +171,49 @@ export function Router({
           style={{
             flexDirection: "row",
             alignItems: "center",
-            gap: 8,
-            paddingHorizontal: 8,
-            minHeight: 49,
+            gap: 12,
+            paddingLeft: compact ? 16 : 24,
+            paddingRight: compact ? 12 : 20,
+            minHeight: 54,
             borderBottomWidth: 1,
             borderColor: colors.border,
           }}
         >
-          <Action theme={theme} onPress={back} label="返回 Superagent">
-            <Icon name="ChevronLeft" size={20} color={color} />
-          </Action>
-          <Text
-            numberOfLines={1}
-            style={{ color, fontSize: 16, fontWeight: "600", flexShrink: 1 }}
+          <View
+            style={{
+              flex: 1,
+              minWidth: 0,
+              flexDirection: compact ? "column" : "row",
+              alignItems: compact ? "flex-start" : "center",
+              gap: compact ? 1 : 8,
+            }}
           >
-            {data?.title || "Router"}
-          </Text>
-          <Text style={{ color: muted, fontSize: 12 }}>主 Session</Text>
+            <Text
+              numberOfLines={1}
+              style={{
+                color,
+                fontSize: 16,
+                fontWeight: "600",
+                maxWidth: "100%",
+                flexShrink: 1,
+              }}
+            >
+              {data?.title || "Router"}
+            </Text>
+            <Text numberOfLines={1} style={{ color: muted, fontSize: 12 }}>
+              主 Session
+            </Text>
+          </View>
+          <Action theme={theme} onPress={back} label="返回 Superagent">
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
+            >
+              <Icon name="CornerUpLeft" size={15} color={color} />
+              <Text style={{ color, fontSize: 13, fontWeight: "500" }}>
+                返回面板
+              </Text>
+            </View>
+          </Action>
         </View>
         <Notice
           theme={theme}
@@ -299,9 +327,9 @@ export function Router({
             maxWidth: 738,
             alignSelf: "center",
             paddingHorizontal: 12,
-            paddingBottom: 6,
+            paddingBottom: compact ? (Platform.OS === "ios" ? 34 : 26) : 12,
             paddingTop: 4,
-            gap: 5,
+            gap: 7,
           }}
         >
           <View
@@ -381,23 +409,43 @@ export function Router({
                     setChoices(options);
                   })
                 }
-                style={{
+                accessibilityState={{ disabled, expanded: choices.length > 0 }}
+                hitSlop={{ top: 4, bottom: 4, left: 0, right: 0 }}
+                style={({ pressed }) => ({
                   flexDirection: "row",
                   alignItems: "center",
-                  gap: 4,
+                  gap: 6,
                   flexShrink: 1,
-                  minHeight: 38,
-                }}
+                  minHeight: 34,
+                  paddingHorizontal: 10,
+                  borderRadius: 9,
+                  backgroundColor: colors.surface2,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  opacity: disabled ? 0.5 : pressed ? 0.8 : 1,
+                })}
               >
+                <Icon name="Cpu" size={15} color={color} />
                 <Text
                   numberOfLines={1}
-                  style={{ color: muted, fontSize: 12, flexShrink: 1 }}
+                  style={{
+                    color,
+                    fontSize: 13,
+                    fontWeight: "600",
+                    flexShrink: 1,
+                  }}
                 >
-                  {[data?.model || "模型", data?.effort]
-                    .filter(Boolean)
-                    .join(" · ")}
+                  {data?.model || "选择模型"}
                 </Text>
-                <Icon name="ChevronDown" color={muted} size={13} />
+                {!!data?.effort && (
+                  <Text
+                    numberOfLines={1}
+                    style={{ color: muted, fontSize: 12, flexShrink: 1 }}
+                  >
+                    {data.effort}
+                  </Text>
+                )}
+                <Icon name="ChevronDown" color={color} size={14} />
               </Pressable>
               <View style={{ flex: 1 }} />
               {data?.busy && (
