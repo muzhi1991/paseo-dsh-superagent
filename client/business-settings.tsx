@@ -1,3 +1,4 @@
+import { GitHubRepositoryLink } from "./source-link";
 import { useState, type ReactNode } from "react";
 import { Pressable, Switch, View } from "react-native";
 import {
@@ -296,6 +297,11 @@ function Block({ block, v, source }: { block: string; v: any; source?: any }) {
             dirty={!!draft}
           />
         )}
+        {source?.id === "github" &&
+          f.key === "repository" &&
+          val === value.config.repository && (
+            <GitHubRepositoryLink repository={value.config.repository} />
+          )}
         {f.key === "directory" && !val && (
           <Copy quiet>{"默认目录：" + v.environment.root}</Copy>
         )}

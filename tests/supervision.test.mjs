@@ -34,7 +34,10 @@ test("match the Web filters, retain cursors, and verify the same Router before m
       return Response.json({
         masterId: "router",
         paused: false,
-        setup: { machine: { stateDir: home } },
+        setup: {
+          machine: { stateDir: home },
+          accounts: { repository: "example/repo" },
+        },
         load: { running: 0, queued: 0, maxWorkers: 1 },
       });
     if (u.pathname === "/api/session/projections")
@@ -59,6 +62,8 @@ test("match the Web filters, retain cursors, and verify the same Router before m
         },
       });
     calls.push({ u, init, body });
+    if (u.pathname === "/orchestrator/api/sources")
+      return Response.json([{ id: "github" }, { id: "forgejo" }]);
     if (u.pathname === "/orchestrator/api/tickets/42")
       return Response.json({
         title: "Fixture 42",
@@ -84,6 +89,10 @@ test("match the Web filters, retain cursors, and verify the same Router before m
       return new Response(null, { status: 409 });
     return Response.json({});
   });
+  assert.deepEqual((await readSupervision({ instance, page: "来源" })).data, [
+    { id: "github", repository: "example/repo" },
+    { id: "forgejo" },
+  ]);
   for (const [page, key, value] of [
     ["触发", "filter", "subscribed"],
     ["评估", "kind", "accept,reopen"],

@@ -1,3 +1,4 @@
+import { GitHubRepositoryLink } from "./source-link";
 import { useState } from "react";
 import { Icon } from "@getpaseo/plugin/client/ui";
 import { View, Text, Pressable, ScrollView } from "react-native";
@@ -175,6 +176,7 @@ function Sources({ v }: { v: any[] }) {
               s.stats.lastAt ? "最近 " + when(s.stats.lastAt) : "",
             )}
           />
+          {s.id === "github" && <GitHubRepositoryLink repository={s.repository} />}
           {s.problem && <Copy>{str(s.problem) || s.problem.code}</Copy>}
           {s.health
             .filter((h: any) => ["error", "paused"].includes(h.state))

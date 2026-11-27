@@ -46,7 +46,11 @@ export async function readSupervision(r: Route & { instance: string }) {
       data = await read("overview");
       break;
     case "来源":
-      data = await read("sources");
+      data = (await read("sources")).map((source: { id: string }) =>
+        source.id === "github"
+          ? { ...source, repository: s.setup?.accounts?.repository }
+          : source,
+      );
       break;
     case "触发":
       data = await read("threads", {

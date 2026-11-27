@@ -1,6 +1,9 @@
+import { View } from "react-native";
+import { SourceLink } from "./source-link";
 import { Copy, Fold, Link, RecordLine, Section, useSurface } from "./surface";
 import type { Route } from "../shared/supervision";
 const words: Record<string, string> = {
+  github: "GitHub",
   ready: "运行中",
   starting: "启动中",
   setup: "等待部署检查",
@@ -153,6 +156,10 @@ export function Detail({ v, route }: { v: any; route: Route }) {
     return (
       <>
         <Section name={v.title}>
+          <SourceLink
+            url={v.url}
+            label={"在 " + (word(v.source) || "来源") + " 查看原帖"}
+          />
           <Copy quiet>
             {join(word(v.source), word(v.stage), when(v.lastAt))}
           </Copy>
@@ -259,9 +266,26 @@ export function Detail({ v, route }: { v: any; route: Route }) {
       {!!v.threads.length && (
         <Section name="订阅线程">
           {v.threads.map((t: any) => (
-            <Thread key={t.key} v={t} />
+            <View key={t.key}>
+              <Thread v={t} />
+              <SourceLink
+                url={t.url}
+                label={"在 " + (word(t.source) || "来源") + " 查看原帖"}
+              />
+            </View>
           ))}
         </Section>
+      )}
+      {!!v.channels?.length && (
+        <Fold label={"沟通渠道 · " + v.channels.length}>
+          {v.channels.map((channel: any, index: number) => (
+            <SourceLink
+              key={index}
+              url={channel.url}
+              label={str(channel.label) || word(channel.source) || "打开渠道"}
+            />
+          ))}
+        </Fold>
       )}
       <Fold label={"输入 · " + v.inputs.length}>
         {v.inputs.map((x: any, i: number) => (
