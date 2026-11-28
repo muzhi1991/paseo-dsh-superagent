@@ -1,7 +1,8 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { useRpc } from "@getpaseo/plugin/client";
 import { useQuery } from "@tanstack/react-query";
+import { refresh } from "../shared/live";
 import { previewPrompts, promptVersions } from "../shared/supervision";
 import {
   Copy,
@@ -134,9 +135,18 @@ export function Prompts({ v, instance }: { v: any; instance: string }) {
     setError("");
   }
   const versions = useRpc(promptVersions),
-    [older, setOlder] = useState<any[]>([]),
-    [offset, setOffset] = useState<number | null | undefined>(),
+    wake = useRpc(refresh),
+    [history, setHistory] = useState<{
+      revision: number;
+      rows: Awaited<ReturnType<typeof versions>>["revisions"];
+      offset: number | null;
+    }>(),
+    historyRequest = useRef(false),
     [loading, setLoading] = useState(false);
+  const currentHistory =
+    history?.revision === v.current.revision ? history : undefined;
+  const older = currentHistory?.rows ?? [];
+  const offset = currentHistory ? currentHistory.offset : v.next_offset;
   const [compare, setCompare] = useState("full");
   const shownName = sections[key] || partNames[key] || part?.key || skill;
   const select = (k: string) => {
@@ -157,15 +167,25 @@ export function Prompts({ v, instance }: { v: any; instance: string }) {
     }
   }
   async function more() {
+    if (historyRequest.current || offset == null) return;
+    historyRequest.current = true;
     setLoading(true);
     setError("");
     try {
-      const h = await versions({ instance, offset: offset ?? v.next_offset });
-      setOlder((prev) => [...prev, ...h.revisions]);
-      setOffset(h.next_offset);
+      const h = await versions({ instance, offset });
+      if (h.current.revision !== v.current.revision) {
+        await wake({ domain: "panel" });
+      } else {
+        setHistory({
+          revision: h.current.revision,
+          rows: [...older, ...h.revisions],
+          offset: h.next_offset ?? null,
+        });
+      }
     } catch (e) {
       setError(errorText(e));
     } finally {
+      historyRequest.current = false;
       setLoading(false);
     }
   }
@@ -226,6 +246,9 @@ export function Prompts({ v, instance }: { v: any; instance: string }) {
   return (
     <Section name="提示词">
       <Copy quiet>{"团队提示词 · 版本 " + rev}</Copy>
+      {draft && rev !== v.current.revision && (
+        <Copy>提示词已在其他位置更新，当前草稿已保留。</Copy>
+      )}
       <ChoiceBar
         label="查看方式"
         appearance="underline"
@@ -410,10 +433,9 @@ export function Prompts({ v, instance }: { v: any; instance: string }) {
                 )}
               </View>
             ))}
-            {!loading &&
-              (offset === undefined ? v.next_offset : offset) != null && (
-                <Link onPress={() => void more()}>更早的版本</Link>
-              )}
+            {!loading && offset != null && (
+              <Link onPress={() => void more()}>更早的版本</Link>
+            )}
             <Link
               onPress={() => {
                 edit(v.defaults);

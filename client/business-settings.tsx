@@ -470,6 +470,11 @@ function Block({ block, v, source }: { block: string; v: any; source?: any }) {
           {field(fields[4])}
         </Card>
       )}
+      {draft && draft.revision !== revision && (
+        <Copy>
+          配置已在其他位置更新。当前草稿已保留，可放弃草稿以载入新版本。
+        </Copy>
+      )}
       {!!message && <Copy>{message}</Copy>}
       {draft && (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>

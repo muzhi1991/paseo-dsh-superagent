@@ -29,41 +29,14 @@ import { pickAttachments } from "./web";
 import { ComposerSheet } from "./composer-sheet";
 import type { AttachmentAction } from "./attachments";
 
-import {
-  transcript,
-  groupTurns,
-  type TranscriptEvent,
-} from "../shared/transcript";
+import { transcript, groupTurns } from "../shared/transcript";
 import { useOutbox, type Outgoing } from "./outbox";
 import { ChatContext, compactNumber, OutgoingMessage, TurnView } from "./turn";
 
-type History = RpcOutput<typeof transcript>;
-type Window = { instance: string; events: TranscriptEvent[]; older?: number };
-function merge(current: Window | null, page: History, prepend = false): Window {
-  const first = page.events[0]?.seq,
-    last = current?.events.at(-1)?.seq;
-  if (
-    !current ||
-    current.instance !== page.instance ||
-    !current.events.length ||
-    (first !== undefined &&
-      last !== undefined &&
-      first > last &&
-      page.older !== undefined &&
-      page.older > last + 1)
-  )
-    return page;
-  const rows = new Map(current.events.map((e) => [e.seq, e]));
-  for (const e of page.events) rows.set(e.seq, e);
-  return {
-    instance: page.instance,
-    events: [...rows.values()].sort((a, b) => a.seq - b.seq),
-    older:
-      prepend || (first !== undefined && first <= current.events[0].seq)
-        ? page.older
-        : current.older,
-  };
-}
+import { routerWatch, refresh } from "../shared/live";
+import { applyChat, prependChat, type ChatWindow } from "../shared/chat-window";
+import { useStream } from "./live";
+
 type Selection = RpcOutput<typeof api.models>[number];
 function PickerOption({
   theme,
@@ -135,28 +108,27 @@ export function Router({
     catalog = useRpc(api.models),
     select = useRpc(api.selectModel),
     upload = useRpc(api.upload);
-  const firstInstance = useRef(expected);
-  const q = useQuery({
-    queryKey: ["dsh-router-transcript", host.id, expected],
-    queryFn: () => history({ instance: firstInstance.current }),
-    refetchInterval: 3500,
-    retry: false,
+  const instance = expected ?? "";
+  const wake = useRpc(refresh);
+  const q = useStream<
+    typeof routerWatch.input,
+    typeof routerWatch.event,
+    ChatWindow
+  >(routerWatch, { instance }, !!instance, (previous, event) => {
+    if (event.type === "error") throw Error(event.message);
+    return applyChat(previous, event);
   });
-  if (!firstInstance.current && q.data) firstInstance.current = q.data.instance;
-  const instance = firstInstance.current || "",
-    changed = !!q.data && q.data.instance !== instance;
   const [draft, setDraft] = useState(""),
     [inputFocused, setInputFocused] = useState(false),
     [files, setFiles] = useState<{ name: string; id: string }[]>([]),
     [error, report] = useState(""),
     [pending, setPending] = useState(false);
-  const [window, setWindow] = useState<Window | null>(null),
-    [menu, setMenu] = useState<"attachments" | "models" | null>(null),
+  const [menu, setMenu] = useState<"attachments" | "models" | null>(null),
     [chosen, setChosen] = useState<Selection | null>(null);
   const models = useQuery({
     queryKey: ["dsh-router-models", host.id, instance],
     queryFn: () => catalog({ instance }),
-    enabled: menu === "models" && !!instance && !changed,
+    enabled: menu === "models" && !!instance,
     retry: false,
   });
   const choices = models.data || [];
@@ -164,7 +136,7 @@ export function Router({
     scrollOnSend = useRef(false),
     log = useRef<ScrollView>(null),
     following = useRef(true);
-  const disabled = pending || changed || !q.data || !!q.error;
+  const disabled = pending || !q.data || !!q.error;
   async function run(fn: () => Promise<void>) {
     if (lock.current) return;
     lock.current = true;
@@ -182,34 +154,31 @@ export function Router({
   const data = q.data,
     color = theme.colors.foreground,
     muted = theme.colors.foregroundMuted;
-  useEffect(() => {
-    if (data) setWindow((w) => merge(w, data));
-  }, [data]);
-  const visible = window ?? data;
-  const outbox = useOutbox(host.id, instance, visible?.events);
+  const outbox = useOutbox(host.id, instance, data?.events);
   const [positioned, setPositioned] = useState(false);
   const [images] = useState(() => new ImageViewport());
   const logHeight = useRef(0);
-  const turns = useMemo(
-    () => groupTurns(visible?.events || []),
-    [visible?.events],
-  );
-  const latestSeq = visible?.events.at(-1)?.seq,
+  const turns = useMemo(() => groupTurns(data?.events || []), [data?.events]);
+  const latestSeq = data?.events.at(-1)?.seq,
     scrolledSeq = useRef<number | undefined>(undefined);
   const initialFollow = useRef(true);
   const scrollMetrics = useRef({ height: 0, y: 0 });
   const prependHeight = useRef<number | null>(null);
   function loadEarlier() {
-    const before = visible?.older;
-    if (before === undefined || disabled || lock.current) return;
+    const before = data?.older;
+    if (!data || before === undefined || disabled || lock.current) return;
     void run(async () => {
       initialFollow.current = false;
       following.current = false;
       const page = await history({ before, instance });
-      prependHeight.current = page.events.length
-        ? scrollMetrics.current.height
-        : null;
-      setWindow((w) => merge(w, page, true));
+      q.update((current) => {
+        const merged = prependChat(current, before, data.generation, page);
+        if (merged === current && current)
+          report("会话已更新，请重新加载更早的消息。");
+        if (merged !== current && page.events.length)
+          prependHeight.current = scrollMetrics.current.height;
+        return merged;
+      });
     });
   }
   async function deliver(message: Outgoing) {
@@ -226,7 +195,6 @@ export function Router({
     } catch (e) {
       outbox.status(message.id, "unconfirmed", errorText(e));
     }
-    void q.refetch();
   }
   async function choose(m: Selection, effort?: string) {
     await select({
@@ -237,7 +205,6 @@ export function Router({
     });
     setMenu(null);
     setChosen(null);
-    await q.refetch();
   }
   const colors = theme.colors;
   const compact = layout.compact;
@@ -311,7 +278,7 @@ export function Router({
                 key={e.id}
                 theme={theme}
                 label={e.name}
-                disabled={pending}
+                disabled={disabled}
                 checked={
                   chosen.provider === activeModel?.provider &&
                   chosen.model === activeModel?.model &&
@@ -325,7 +292,7 @@ export function Router({
                 key={m.provider + "/" + m.model}
                 theme={theme}
                 label={m.label}
-                disabled={pending}
+                disabled={disabled}
                 checked={m === activeModel}
                 onPress={() =>
                   m.efforts.length ? setChosen(m) : run(() => choose(m))
@@ -402,16 +369,23 @@ export function Router({
             </Action>
           </View>
         )}
-        <Notice
-          theme={theme}
-          text={
-            changed
-              ? "实例已切换，请返回再打开主会话"
-              : error || errorText(q.error || "")
-          }
-        />
+        <Notice theme={theme} text={error || errorText(q.error || "")} />
+        {q.error && (
+          <Action
+            theme={theme}
+            onPress={() => {
+              void q
+                .retry(() => wake({ domain: "router" }))
+                .catch((e) => report(errorText(e)));
+            }}
+          >
+            重新读取
+          </Action>
+        )}
         <ScrollView
-          contentContainerStyle={q.isPending ? { flexGrow: 1 } : undefined}
+          contentContainerStyle={
+            !data && !q.error ? { flexGrow: 1 } : undefined
+          }
           key={latestSeq === undefined ? "empty" : "transcript"}
           ref={log}
           style={{
@@ -500,7 +474,7 @@ export function Router({
             onLayout={images.layoutChanged}
             style={{
               width: "100%",
-              flexGrow: q.isPending ? 1 : undefined,
+              flexGrow: !data && !q.error ? 1 : undefined,
               maxWidth: 716,
               alignSelf: "center",
               paddingHorizontal: 16,
@@ -508,44 +482,33 @@ export function Router({
               paddingBottom: 14,
             }}
           >
-            {visible?.older !== undefined && (
+            {data?.older !== undefined && (
               <Action theme={theme} disabled={disabled} onPress={loadEarlier}>
                 更早的消息
               </Action>
             )}
-            {!changed &&
-              turns.map((t) => (
-                <TurnView
-                  key={t.id}
-                  turn={t}
-                  card={data?.actionCards?.[t.id]}
-                />
-              ))}
-            {!changed &&
-              outbox.messages.map((message) => (
-                <OutgoingMessage
-                  key={message.id}
-                  message={message}
-                  disabled={disabled}
-                  retry={() =>
-                    void run(() => {
-                      outbox.status(message.id, "sending");
-                      return deliver(message);
-                    })
-                  }
-                />
-              ))}
-            {q.isPending && <Loading theme={theme} />}
-            {!turns.length &&
-              !outbox.messages.length &&
-              !q.isPending &&
-              !q.error && (
-                <Text
-                  style={{ textAlign: "center", color: muted, padding: 20 }}
-                >
-                  还没有对话
-                </Text>
-              )}
+            {turns.map((t) => (
+              <TurnView key={t.id} turn={t} card={data?.actionCards?.[t.id]} />
+            ))}
+            {outbox.messages.map((message) => (
+              <OutgoingMessage
+                key={message.id}
+                message={message}
+                disabled={disabled}
+                retry={() =>
+                  void run(() => {
+                    outbox.status(message.id, "sending");
+                    return deliver(message);
+                  })
+                }
+              />
+            ))}
+            {!data && !q.error && <Loading theme={theme} />}
+            {!turns.length && !outbox.messages.length && !!data && !q.error && (
+              <Text style={{ textAlign: "center", color: muted, padding: 20 }}>
+                还没有对话
+              </Text>
+            )}
           </View>
         </ScrollView>
 
@@ -577,7 +540,7 @@ export function Router({
                   <Action
                     key={f.id}
                     theme={theme}
-                    disabled={pending}
+                    disabled={disabled}
                     label={"移除 " + f.name}
                     onPress={() =>
                       setFiles((prev) => prev.filter((x) => x.id !== f.id))
@@ -611,7 +574,6 @@ export function Router({
                     }
                   : undefined
               }
-              editable={!changed}
               accessibilityLabel="给 Router 发送消息"
               placeholder="发送消息…"
               placeholderTextColor={muted}
@@ -688,7 +650,6 @@ export function Router({
                   onPress={() =>
                     run(async () => {
                       await stop({ instance });
-                      await q.refetch();
                     })
                   }
                 >

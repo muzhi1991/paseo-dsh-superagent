@@ -1,4 +1,6 @@
-import { activeInstance } from "../shared/api";
+import { instanceWatch, refresh } from "../shared/live";
+import { useSnapshot } from "./live";
+import { usePanelData } from "./panel-data";
 import { MobileFrame } from "./mobile-frame";
 import { useState, useRef } from "react";
 import {
@@ -12,18 +14,7 @@ import {
 } from "react-native";
 import { type PluginScreenProps, useRpc } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/ui";
-import {
-  useInfiniteQuery,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-import {
-  view,
-  mutate,
-  tabs,
-  type Command,
-  type Route,
-} from "../shared/supervision";
+import { mutate, tabs, type Command, type Route } from "../shared/supervision";
 import { Action, Loading, Notice, errorText } from "./common";
 import { PanelDialog } from "./panel-dialog";
 import { Router } from "./router";
@@ -41,19 +32,15 @@ type PanelProps = PluginScreenProps & {
   openLinkedAgent?: (id: string) => void;
 };
 export function Panel(props: PanelProps) {
-  const resolve = useRpc(activeInstance);
-  const current = useQuery({
-    queryKey: ["dsh-active-instance", props.host.id],
-    queryFn: () => resolve({}),
-    retry: false,
-  });
+  const current = useSnapshot(instanceWatch, {});
+  const wake = useRpc(refresh);
   return (
     <InstancePanel
       key={JSON.stringify([props.host.id, current.data])}
       {...props}
       instance={current.data}
       connectionError={current.error}
-      reconnect={() => current.refetch()}
+      reconnect={() => current.retry(() => wake({ domain: "instance" }))}
     />
   );
 }
@@ -79,28 +66,10 @@ function InstancePanel(
   const drafts = useRef(new Map<string, unknown>());
   const [problem, setProblem] = useState("");
   const route = stack[stack.length - 1],
-    read = useRpc(view),
-    write = useRpc(mutate),
-    cache = useQueryClient();
-  const q = useInfiniteQuery({
-    queryKey: ["supervision", host.id, props.instance, route],
-    initialPageParam: 0,
-    queryFn: ({ pageParam }) =>
-      read({ ...route, offset: pageParam, instance: props.instance! }),
-    getNextPageParam: (last) =>
-      Number.isInteger(last.data?.next_offset)
-        ? (last.data.next_offset as number)
-        : undefined,
-    enabled: !!props.instance && !chat,
-    retry: false,
-    refetchInterval: route.page === "设置" ? false : 10000,
-  });
-  const result = q.data?.pages[0],
-    items =
-      q.data?.pages
-        .filter((p) => p.instance === result?.instance)
-        .flatMap((p) => p.data?.items || []) || [];
-  const loading = q.isPending && !props.connectionError;
+    write = useRpc(mutate);
+  const q = usePanelData(host.id, props.instance, route, !chat);
+  const { result, items } = q;
+  const loading = !result && !q.error && !props.connectionError;
   const navigate = (next: Route) => {
     setProblem("");
     setStack((s) => [...s, next]);
@@ -131,10 +100,8 @@ function InstancePanel(
     try {
       await write({ instance: pending.instance, command: pending.command });
       pending.after?.();
-      await cache.invalidateQueries({ queryKey: ["supervision", host.id] });
     } catch (e) {
       setProblem(errorText(e));
-      await q.refetch();
     } finally {
       setPending(null);
       lock.current = false;
@@ -304,7 +271,10 @@ function InstancePanel(
                 key={t}
                 accessibilityRole="tab"
                 disabled={!props.instance}
-                accessibilityState={{ selected: t === selected, disabled: !props.instance }}
+                accessibilityState={{
+                  selected: t === selected,
+                  disabled: !props.instance,
+                }}
                 aria-selected={t === selected}
                 onPress={() => {
                   setProblem("");
@@ -373,25 +343,31 @@ function InstancePanel(
               <Action
                 theme={theme}
                 onPress={async () => {
-                  await props.reconnect();
-                  if (props.instance) await q.refetch();
+                  try {
+                    if (props.connectionError || !props.instance)
+                      await props.reconnect();
+                    else await q.retry();
+                  } catch (e) {
+                    setProblem(errorText(e));
+                  }
                 }}
               >
                 重新读取
               </Action>
             )}
             {loading && <Loading theme={theme} />}
+            {q.moved && (
+              <Action theme={theme} onPress={q.reset}>
+                列表已更新，查看最新结果
+              </Action>
+            )}
             {result && (
               <PageContents
                 key={result.instance}
                 route={route}
                 result={result}
                 setRoute={select}
-                more={
-                  q.hasNextPage && !q.isFetchingNextPage
-                    ? () => void q.fetchNextPage()
-                    : undefined
-                }
+                more={q.more}
                 items={items}
               />
             )}

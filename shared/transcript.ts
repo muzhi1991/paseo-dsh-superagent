@@ -94,6 +94,13 @@ export const imageAttachment = defineRpc({
   }),
 });
 
+// Keep router.image available for clients still running the previous bundle.
+export const imageBytes = defineRpc({
+  name: "router.image-bytes",
+  input: imageAttachment.input.extend({ size: z.enum(["preview", "original"]) }),
+  output: z.instanceof(Uint8Array),
+});
+
 export type Turn = {
   id: number;
   start?: TranscriptEvent;

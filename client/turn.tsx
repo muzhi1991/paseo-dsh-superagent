@@ -1,4 +1,6 @@
 import { loadImage, type ImageViewport } from "./image-viewport";
+import { fitsPreview } from "../shared/image";
+import { imageUri } from "./image-uri";
 import { PresentedFiles, ProposalCard } from "./turn-cards";
 import type { ActionCard } from "../shared/cards";
 import {
@@ -9,13 +11,21 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Image, Pressable, ScrollView, Text, View } from "react-native";
+import {
+  Image,
+  Modal,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import { useRpc } from "@getpaseo/plugin/client";
 import { copyText, Icon, Markdown } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import {
   eventDetail,
-  imageAttachment,
+  imageBytes,
   type Attachment,
   type Turn,
   type TranscriptEvent,
@@ -191,14 +201,25 @@ function Fold({
     </View>
   );
 }
-function ImagePreview({ file, seq }: { file: Attachment; seq: number }) {
+function ChatImage({
+  file,
+  seq,
+  full = false,
+}: {
+  file: Attachment;
+  seq: number;
+  full?: boolean;
+}) {
   const { instance, hostId, theme } = useChat(),
-    fetch = useRpc(imageAttachment);
+    fetch = useRpc(imageBytes);
+  const size = full || fitsPreview(file) ? "original" : "preview";
   const [decodeFailed, setDecodeFailed] = useState(false);
   const q = useQuery({
-    queryKey: ["router-image", hostId, instance, seq, file.id],
+    queryKey: ["router-image-bytes", hostId, instance, seq, file.id, size],
     queryFn: ({ signal }) =>
-      loadImage(signal, () => fetch({ instance, seq, id: file.id! })),
+      loadImage(signal, async () =>
+        imageUri(await fetch({ instance, seq, id: file.id!, size })),
+      ),
     staleTime: Infinity,
     gcTime: 60_000,
     retry: false,
@@ -209,10 +230,22 @@ function ImagePreview({ file, seq }: { file: Attachment; seq: number }) {
       <Image
         accessibilityLabel={file.name}
         resizeMode="contain"
-        source={{ uri: "data:" + q.data.mime + ";base64," + q.data.data }}
+        source={{ uri: q.data }}
         style={{ width: "100%", height: "100%" }}
         onError={() => setDecodeFailed(true)}
       />
+    );
+  if (full && (q.error || decodeFailed))
+    return (
+      <Action
+        theme={theme}
+        onPress={() => {
+          setDecodeFailed(false);
+          void q.refetch();
+        }}
+      >
+        原图加载失败，点此重试
+      </Action>
     );
   return (
     <Text
@@ -223,14 +256,19 @@ function ImagePreview({ file, seq }: { file: Attachment; seq: number }) {
         textAlign: "center",
       }}
     >
-      {q.error || decodeFailed ? "图片无法预览" : "加载图片…"}
+      {q.error || decodeFailed
+        ? "点按查看原图"
+        : full
+          ? "正在加载原图…"
+          : "加载图片…"}
     </Text>
   );
 }
 function ImageSlot({ file, seq }: { file: Attachment; seq: number }) {
   const { images, theme } = useChat();
   const node = useRef<View>(null),
-    [near, setNear] = useState(false);
+    [near, setNear] = useState(false),
+    [open, setOpen] = useState(false);
   useEffect(() => {
     if (node.current) return images.watch(node.current, setNear);
   }, [images]);
@@ -251,7 +289,58 @@ function ImageSlot({ file, seq }: { file: Attachment; seq: number }) {
         justifyContent: "center",
       }}
     >
-      {near && <ImagePreview file={file} seq={seq} />}
+      {near && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={"查看原图 " + file.name}
+          onPress={() => setOpen(true)}
+          style={{ flex: 1, justifyContent: "center" }}
+        >
+          <ChatImage file={file} seq={seq} />
+        </Pressable>
+      )}
+      {open && (
+        <Modal
+          visible
+          animationType="fade"
+          onRequestClose={() => setOpen(false)}
+        >
+          <SafeAreaView
+            style={{ flex: 1, backgroundColor: theme.colors.surface0 }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                paddingHorizontal: 12,
+              }}
+            >
+              <Text
+                numberOfLines={1}
+                style={{ flex: 1, color: theme.colors.foreground }}
+              >
+                {file.name}
+              </Text>
+              <Action
+                theme={theme}
+                onPress={() => setOpen(false)}
+                label="关闭原图"
+              >
+                <Icon name="X" size={20} color={theme.colors.foreground} />
+              </Action>
+            </View>
+            <View
+              style={{
+                flex: 1,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <ChatImage file={file} seq={seq} full />
+            </View>
+          </SafeAreaView>
+        </Modal>
+      )}
     </View>
   );
 }

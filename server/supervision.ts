@@ -14,8 +14,8 @@ function segment(id?: string) {
     throw Error("无效记录 ID");
   return encodeURIComponent(id);
 }
-async function deployment(c: Parameters<typeof rpc>[0]) {
-  const view = await rpc(c, "settings/describe", {});
+async function deployment(c: Parameters<typeof rpc>[0], signal?: AbortSignal) {
+  const view = await rpc(c, "settings/describe", {}, signal);
   const entry = view?.namespaces?.find(
     (n: { ns: string }) => n.ns === "dsh-superagent",
   );
@@ -35,10 +35,13 @@ async function deployment(c: Parameters<typeof rpc>[0]) {
     },
   };
 }
-export async function readSupervision(r: Route & { instance: string }) {
-  const { c, s, instance } = await target(r.instance);
+export async function readSupervision(
+  r: Route & { instance?: string },
+  signal?: AbortSignal,
+) {
+  const { c, s, instance } = await target(r.instance, signal);
   const read = (path: string, params: Record<string, string> = {}) =>
-    management(c, path + "?" + new URLSearchParams(params));
+    management(c, path + "?" + new URLSearchParams(params), signal);
   const offset = String(r.offset || 0);
   let data, agent: string | undefined;
   switch (r.page) {
@@ -100,7 +103,7 @@ export async function readSupervision(r: Route & { instance: string }) {
       if (r.filter === "deployment")
         data = {
           ...s.setup,
-          form: await deployment(c).catch((e: Error) => {
+          form: await deployment(c, signal).catch((e: Error) => {
             if (e.message.includes("401")) throw e;
             return null;
           }),

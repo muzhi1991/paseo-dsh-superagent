@@ -1,4 +1,10 @@
-import { transcript, eventDetail, imageAttachment } from "./shared/transcript";
+import { renderThumbnail } from "./server/thumbnail";
+import {
+  transcript,
+  eventDetail,
+  imageAttachment,
+  imageBytes,
+} from "./shared/transcript";
 import {
   readTranscript,
   readEventDetail,
@@ -23,17 +29,21 @@ import {
 } from "./server/connection";
 import { readHistory } from "./server/router";
 import { dispatch } from "./server/dispatch";
-import { createSidebarPoller } from "./server/sidebar-counts";
+import { registerUpdates } from "./server/updates";
 import { readPanel } from "./server/panel";
 
 export default function contribute(server: PluginServerContext) {
   server.handle(api.activeInstance, async () => (await target()).instance);
-  const sidebar = createSidebarPoller();
-  server.handle(api.sidebarCounts, (_, context) => sidebar.subscribe(context));
-  server.handle(view, readSupervision);
-  server.handle(transcript, readTranscript);
+  const updates = registerUpdates(server);
+  server.handle(view, (input) => readSupervision(input));
+  server.handle(transcript, (input) => readTranscript(input));
   server.handle(eventDetail, readEventDetail);
   server.handle(imageAttachment, readImageAttachment);
+  server.handle(imageBytes, async (input) => {
+    const image = await readImageAttachment(input);
+    const bytes = Buffer.from(image.data, "base64");
+    return input.size === "original" ? bytes : renderThumbnail(bytes, image.mime);
+  });
   server.handle(promptVersions, async ({ instance, revision, offset }) => {
     const { c } = await target(instance);
     const params = new URLSearchParams();
@@ -59,24 +69,28 @@ export default function contribute(server: PluginServerContext) {
       );
     return previewPrompts.output.parse(await res.json());
   });
-  server.handle(mutate, change);
+  server.handle(mutate, (input) => updates.write("panel", () => change(input)));
   server.handle(api.connection, async () => {
     const c = await config();
     return { url: c.url, authenticated: !!c.cookie };
   });
   server.handle(api.verify, async (input) => {
     const result = await check(input);
-    if (result.saved) sidebar.connectionChanged();
+    if (result.saved) updates.changed();
     return result;
   });
   server.handle(api.panel, readPanel);
   server.handle(api.history, ({ before }) => readHistory(before));
-  server.handle(api.send, dispatch);
-  server.handle(api.cancel, async ({ instance }) => {
-    const { c, id } = await target(instance);
-    await rpc(c, "session/cancel", { request: { sessionId: id } });
-    return true;
-  });
+  server.handle(api.send, (input) =>
+    updates.write("router", () => dispatch(input)),
+  );
+  server.handle(api.cancel, ({ instance }) =>
+    updates.write("router", async () => {
+      const { c, id } = await target(instance);
+      await rpc(c, "session/cancel", { request: { sessionId: id } });
+      return true;
+    }),
+  );
   server.handle(api.models, async ({ instance }) => {
     const { c } = await target(instance),
       v = await management(c, "models");
@@ -89,13 +103,15 @@ export default function contribute(server: PluginServerContext) {
       })),
     );
   });
-  server.handle(api.selectModel, async ({ instance, ...selection }) => {
-    const { c, id } = await target(instance);
-    await rpc(c, "session/selectModel", {
-      request: { sessionId: id, ...selection },
-    });
-    return true;
-  });
+  server.handle(api.selectModel, ({ instance, ...selection }) =>
+    updates.write("router", async () => {
+      const { c, id } = await target(instance);
+      await rpc(c, "session/selectModel", {
+        request: { sessionId: id, ...selection },
+      });
+      return true;
+    }),
+  );
   server.handle(api.upload, async ({ instance, name, data, mediaType }) => {
     const { c, id } = await target(instance);
     const r = await request(
@@ -122,5 +138,5 @@ export default function contribute(server: PluginServerContext) {
       throw Error(v.error?.message || "DSH 未接收附件");
     return v.value.receiptId;
   });
-  return sidebar.dispose;
+  return updates.dispose;
 }

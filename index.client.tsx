@@ -4,7 +4,7 @@ import type {
   PluginSidebarItemProps,
   PluginScreenProps,
 } from "@getpaseo/plugin/client";
-import { useSubscription } from "@getpaseo/plugin/client";
+import { LiveClient, useStream } from "./client/live";
 import { sidebarCounts, type SidebarSnapshot } from "./shared/api";
 import { SidebarCounts } from "./client/sidebar-counts";
 import { SidebarRow } from "@getpaseo/plugin/client/ui";
@@ -15,9 +15,12 @@ function Sidebar(props: PluginSidebarItemProps) {
   const { currentScreen, openScreen, layout } = props;
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
-  const [snapshot, setSnapshot] = useState<SidebarSnapshot>(null);
-  const subscription = useSubscription(sidebarCounts, {}, setSnapshot);
-  const status = subscription.status === "live" && snapshot;
+  const counts = useStream<
+    typeof sidebarCounts.input,
+    typeof sidebarCounts.event,
+    SidebarSnapshot
+  >(sidebarCounts, {}, !open, (_, value) => value);
+  const status = !counts.error && counts.data;
 
   return (
     <>
@@ -66,18 +69,30 @@ export default function contribute(client: PluginClientContext) {
   client.addScreen({
     id: "superagent",
     title: "DSH Superagent",
-    Component: PanelScreen,
+    Component: (props) => (
+      <LiveClient.Provider value={client}>
+        <PanelScreen key={props.host.id} {...props} />
+      </LiveClient.Provider>
+    ),
   });
   client.addSidebarHeaderItem({
     id: "superagent",
     title: "DSH Superagent",
-    Component: (props) => <Sidebar key={props.host.id} {...props} />,
+    Component: (props) => (
+      <LiveClient.Provider value={client}>
+        <Sidebar key={props.host.id} {...props} />
+      </LiveClient.Provider>
+    ),
   });
   client.addSettingsScreen({
     id: "connection",
     title: "DSH 实例",
     icon: "Plug",
-    Component: ConnectionSettings,
+    Component: (props) => (
+      <LiveClient.Provider value={client}>
+        <ConnectionSettings key={props.host.id} {...props} />
+      </LiveClient.Provider>
+    ),
   });
   return () => {};
 }

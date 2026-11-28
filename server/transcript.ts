@@ -216,47 +216,78 @@ export function projectEvents(
   }
   return rows;
 }
-export async function readTranscript({
-  before,
-  instance: expected,
-}: {
-  before?: number;
-  instance?: string;
-}) {
-  const { c, id, instance } = await target(expected);
-  const proj = await rpc(c, "session/projections", {
-    request: { sessionId: id },
-  });
-  if (proj?.kind !== "sequenced") throw Error("主会话历史暂时不可用");
-  const page = await rpc(c, "session/page", {
-    request: {
-      address: { kind: "session", sessionId: id },
-      throughSeq: proj.asOfSeq,
-      maxMessages: 64,
-      turnWindow: { minMessages: 1, minTurns: 5 },
-      ...(before ? { beforeSeq: before } : {}),
+type TailCache = { key?: string; events?: TranscriptEvent[]; older?: number };
+export function tailReader(instance: string) {
+  const cache: TailCache = {};
+  return (signal: AbortSignal) => readTranscript({ instance }, signal, cache);
+}
+export async function readTranscript(
+  {
+    before,
+    instance: expected,
+  }: {
+    before?: number;
+    instance?: string;
+  },
+  signal?: AbortSignal,
+  cache?: TailCache,
+) {
+  const { c, id, instance } = await target(expected, signal);
+  const proj = await rpc(
+    c,
+    "session/projections",
+    {
+      request: { sessionId: id },
     },
-  });
-  // A waking inbox insertion often precedes the turn/start at the page boundary.
-  const first = page.records[0]?.event.seq;
-  const prefix =
-    page.hasMore && first
-      ? await rpc(c, "session/page", {
-          request: {
-            address: { kind: "session", sessionId: id },
-            throughSeq: proj.asOfSeq,
-            beforeSeq: first,
-            maxMessages: 4,
-          },
-        })
-      : undefined;
+    signal,
+  );
+  if (proj?.kind !== "sequenced") throw Error("主会话历史暂时不可用");
   const v = proj.values || {},
-    outline = v.turnOutline || [],
+    outline = v.turnOutline || [];
+  const key = JSON.stringify([instance, proj.asOfSeq, outline]);
+  let events = cache?.events,
+    older = cache?.older;
+  if (!events || cache?.key !== key) {
+    const page = await rpc(
+      c,
+      "session/page",
+      {
+        request: {
+          address: { kind: "session", sessionId: id },
+          throughSeq: proj.asOfSeq,
+          maxMessages: 64,
+          turnWindow: { minMessages: 1, minTurns: 5 },
+          ...(before ? { beforeSeq: before } : {}),
+        },
+      },
+      signal,
+    );
+    // A waking inbox insertion often precedes the turn/start at the page boundary.
+    const first = page.records[0]?.event.seq;
+    const prefix =
+      page.hasMore && first
+        ? await rpc(
+            c,
+            "session/page",
+            {
+              request: {
+                address: { kind: "session", sessionId: id },
+                throughSeq: proj.asOfSeq,
+                beforeSeq: first,
+                maxMessages: 4,
+              },
+            },
+            signal,
+          )
+        : undefined;
     events = projectEvents(
       [...(prefix?.records || []), ...page.records],
       outline,
-    ).filter((e) => e.seq >= first),
-    latest = events.at(-1)?.turn ?? outline.at(-1)?.turn;
+    ).filter((e) => e.seq >= first);
+    older = page.hasMore ? first : undefined;
+    if (cache && !signal?.aborted) Object.assign(cache, { key, events, older });
+  }
+  const latest = events.at(-1)?.turn ?? outline.at(-1)?.turn;
   const stats = v.sessionStats || {},
     usage = v.tokenUsage || {},
     pressure = v.contextPressure;
@@ -269,7 +300,7 @@ export async function readTranscript({
     effort: sel.reasoningEffort || "",
     events,
     ...(!before && { actionCards: actionCardsByTurn(v.actionCards) }),
-    older: page.hasMore ? page.records[0]?.event.seq : undefined,
+    older,
     busy:
       !before &&
       latest != null &&

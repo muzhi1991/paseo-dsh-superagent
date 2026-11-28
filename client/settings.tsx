@@ -1,18 +1,14 @@
 import { useState } from "react";
 import { ScrollView, Text, TextInput, View } from "react-native";
 import { useRpc, type PluginSurfaceProps } from "@getpaseo/plugin/client";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSnapshot } from "./live";
+import { connectionWatch } from "../shared/live";
 import * as api from "../shared/api";
 import { Action, errorText, Notice } from "./common";
 
-export function ConnectionSettings({ theme, host }: PluginSurfaceProps) {
-  const cache = useQueryClient();
-  const read = useRpc(api.connection),
-    verify = useRpc(api.verify);
-  const current = useQuery({
-    queryKey: ["dsh-config", host.id],
-    queryFn: () => read({}),
-  });
+export function ConnectionSettings({ theme }: PluginSurfaceProps) {
+  const verify = useRpc(api.verify);
+  const current = useSnapshot(connectionWatch, {});
   const [edited, address] = useState<string | null>(null),
     [token, setToken] = useState(""),
     [result, report] = useState(""),
@@ -42,12 +38,7 @@ export function ConnectionSettings({ theme, host }: PluginSurfaceProps) {
         ].join("\n"),
       );
       if (r.saved) {
-        await Promise.all([
-          current.refetch(),
-          cache.invalidateQueries({
-            queryKey: ["dsh-active-instance", host.id],
-          }),
-        ]);
+        address(null);
         setToken("");
       }
     } catch (e) {
@@ -115,6 +106,7 @@ export function ConnectionSettings({ theme, host }: PluginSurfaceProps) {
             : "登录链接中 token 的值"
         }
         onChangeText={(v) => {
+          if (v && edited === null) address(url);
           setToken(v);
           report("");
         }}

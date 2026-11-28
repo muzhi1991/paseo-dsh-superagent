@@ -17,13 +17,17 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json",
-    "test": "node --experimental-strip-types --test tests/*.test.mjs"
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "build:thumbnail": "node scripts/build-thumbnail.mjs"
   },
   "devDependencies": {
+    "@cf-wasm/photon": "0.4.0",
     "@getpaseo/plugin": "0.17.5",
     "@tanstack/react-query": "^5.90.11",
     "@types/node": "^22.20.7",
     "@types/react": "~19.2.0",
+    "esbuild": "0.27.3",
+    "image-size": "2.2.0",
     "react": "19.1.0",
     "react-native": "0.81.5",
     "typescript": "^5.9.3",

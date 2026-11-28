@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -63,6 +64,7 @@ function origin(input: string) {
   return url.origin;
 }
 export async function request(c: Config, path: string, init: RequestInit = {}) {
+  init.signal?.throwIfAborted();
   const timeout = AbortSignal.timeout(20000);
   const response = await fetch(c.url + path, {
     ...init,
@@ -96,8 +98,8 @@ export async function management(
   if (!r.ok) throw Error("Superagent 管理接口返回 HTTP " + r.status);
   return r.json();
 }
-export async function state(c: Config) {
-  const v = await management(c, "state");
+export async function state(c: Config, signal?: AbortSignal) {
+  const v = await management(c, "state", signal);
   if (
     typeof v?.masterId !== "string" ||
     !v.masterId ||
@@ -112,9 +114,11 @@ export async function rpc(
   c: Config,
   method: string,
   args: Record<string, unknown>,
+  signal?: AbortSignal,
 ) {
   const rpcId = randomUUID();
   const r = await request(c, "/api/" + method, {
+    signal,
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -156,17 +160,20 @@ export async function rpc(
   }
   return body.result.value;
 }
-export async function target(expected?: string) {
+export const targetEvents = new EventEmitter<{ mismatch: [actual: string] }>();
+export async function target(expected?: string, signal?: AbortSignal) {
   const c = await config();
   if (!c.cookie)
     throw Error(
       "请先在「Paseo 设置 → 插件 → DSH Superagent → DSH 实例」填写启动令牌，点「验证并保存」。",
     );
-  const s = await state(c),
+  const s = await state(c, signal),
     id = s.masterId as string,
     instance = c.url + "#" + id;
-  if (expected !== undefined && instance !== expected)
-    throw Error("实例已切换，请回到面板，点「重新读取」以打开当前实例。");
+  if (expected !== undefined && instance !== expected) {
+    if (!signal?.aborted) targetEvents.emit("mismatch", instance);
+    throw new Error("实例已切换，请回到面板，点「重新读取」以打开当前实例。");
+  }
   return { c, s, id, instance };
 }
 export async function check({
