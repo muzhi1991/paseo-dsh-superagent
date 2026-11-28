@@ -44,6 +44,7 @@ export function ConnectionSettings({ theme, host }: PluginSurfaceProps) {
       if (r.saved) {
         await Promise.all([
           current.refetch(),
+          cache.resetQueries({ queryKey: ["dsh-sidebar-counts", host.id] }),
           cache.invalidateQueries({
             queryKey: ["dsh-active-instance", host.id],
           }),

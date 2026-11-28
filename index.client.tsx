@@ -4,6 +4,10 @@ import type {
   PluginSidebarItemProps,
   PluginScreenProps,
 } from "@getpaseo/plugin/client";
+import { useRpc } from "@getpaseo/plugin/client";
+import { useQuery } from "@tanstack/react-query";
+import { sidebarCounts } from "./shared/api";
+import { SidebarCounts } from "./client/sidebar-counts";
 import { SidebarRow } from "@getpaseo/plugin/client/ui";
 import { Panel } from "./client/panel";
 import { ConnectionSettings } from "./client/settings";
@@ -12,10 +16,25 @@ function Sidebar(props: PluginSidebarItemProps) {
   const { currentScreen, openScreen, layout } = props;
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
+  const readCounts = useRpc(sidebarCounts);
+  const counts = useQuery({
+    queryKey: ["dsh-sidebar-counts", props.host.id],
+    queryFn: () => readCounts({}),
+    refetchInterval: 15_000,
+    staleTime: 10_000,
+    retry: false,
+  });
+  const status = !counts.isError && counts.data;
+
   return (
     <>
       <SidebarRow
         icon="Hammer"
+        trailing={
+          status && (status.running > 0 || status.needsAttention > 0) ? (
+            <SidebarCounts {...status} theme={props.theme} />
+          ) : undefined
+        }
         active={open || currentScreen?.screenId === "superagent"}
         onPress={() =>
           layout.compact

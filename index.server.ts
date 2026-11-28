@@ -27,6 +27,15 @@ import { readPanel } from "./server/panel";
 
 export default function contribute(server: PluginServerContext) {
   server.handle(api.activeInstance, async () => (await target()).instance);
+  server.handle(api.sidebarCounts, async () => {
+    const c = await config();
+    if (!c.cookie) return null;
+    const overview = await management(c, "overview");
+    return {
+      running: overview.executor.running,
+      needsAttention: overview.person.length,
+    };
+  });
   server.handle(view, readSupervision);
   server.handle(transcript, readTranscript);
   server.handle(eventDetail, readEventDetail);

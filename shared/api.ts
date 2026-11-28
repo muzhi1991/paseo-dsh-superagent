@@ -2,6 +2,16 @@ import { imageMediaType } from "./image";
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 
+export const sidebarCounts = defineRpc({
+  name: "superagent.sidebar-counts",
+  input: z.object({}),
+  output: z
+    .object({
+      running: z.number().int().nonnegative(),
+      needsAttention: z.number().int().nonnegative(),
+    })
+    .nullable(),
+});
 export const activeInstance = defineRpc({
   name: "connection.target",
   input: z.object({}),

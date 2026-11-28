@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DSH Superagent · 侧边栏状态预览</title>
+<style>
+:root{color-scheme:dark;font:15px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;background:#111110;color:#eceae8;--muted:#aba7a4;--line:#33312f;--blue:#58abf0;--amber:#e5b45e;--gray:#99948f}
+*{box-sizing:border-box}body{margin:0}main{width:min(100%,406px);margin:24px auto;padding:0 8px}.nav{background:#1c1b1a;border:1px solid var(--line);border-radius:15px;padding:6px 0;overflow:hidden}.row{height:46px;display:flex;align-items:center;padding:0 16px;gap:10px;color:var(--muted)}.row>svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;flex:none}.label{font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.counts{display:flex;align-items:center;gap:8px;margin-left:auto;flex:none}.pair{display:inline-flex;align-items:center;gap:3px;font-size:13px;font-variant-numeric:tabular-nums}.mark{width:14px;height:14px;position:relative;display:inline-grid;place-items:center;flex:none}.mark::before,.mark::after{content:"";position:absolute;border-radius:50%}.run::before{height:9px;width:9px;border:1.5px solid #344e62;border-right-color:var(--blue);animation:spin .9s steps(12) infinite}.run::after{height:5.5px;width:5.5px;background:var(--blue)}.attention::before{height:7px;width:7px;border:1.5px solid var(--amber)}.review::before{height:5.5px;width:5.5px;background:var(--gray)}.review::before{background:#34bd68}
+@keyframes spin{to{transform:rotate(1turn)}}@media(prefers-reduced-motion:reduce){.run::before{animation:none}}
+.controls{margin:24px 4px 0}.controls h1{font-size:17px;margin:0 0 6px;font-weight:600}.hint{font-size:13px;color:var(--muted);margin:0 0 12px}.control{min-height:47px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}.control span:nth-child(2){flex:1}.control output{min-width:24px;text-align:center;font-variant-numeric:tabular-nums}button{font:inherit;color:inherit;cursor:pointer;border:1px solid var(--line);border-radius:7px;background:#222120;min-width:34px;min-height:32px}button:disabled{opacity:.4}button:focus-visible{outline:2px solid var(--blue)}#reset{margin-top:14px;padding:2px 12px;font-size:13px}
+</style>
+<main>
+<section class="nav" aria-label="手机侧边栏局部预览">
+<div class="row"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="label">计划</span></div>
+<div class="row"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="2"/><path d="M7 6v9m5-9v6m5-6v11"/></svg><span class="label">任务</span><div class="counts" aria-label="1 个运行中，2 个待查看"><span class="pair"><i class="mark run"></i>1</span><span class="pair"><i class="mark review"></i>2</span></div></div>
+<div class="row"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5 5 5m-6 1-9 10a1.7 1.7 0 0 1-2.5-2.3l9.8-9.3m-1 0c2-3 1.1-4.9-1-6.3 4.3-.4 6.6 1.2 8.6 4.4l1.9 2 .9-.4 2.2 2.3-3.3 3.2-2.1-2.2.4-.9-2.4-2.2-3.2 2"/></svg><span class="label">DSH Superagent</span><div id="status" class="counts" aria-live="polite"></div></div>
+</section>
+<section class="controls"><h1>工单状态预览</h1><p class="hint">调整示例数量，查看侧边栏的变化。</p><div id="controls"></div><button id="reset">全部归零</button></section>
+</main>
+<script>
+const states=[{key:'run',label:'执行中',count:2},{key:'attention',label:'待你处理',count:1}];
+const controls=document.querySelector('#controls'),status=document.querySelector('#status');
+for(const state of states){
+ const row=document.createElement('div');row.className='control';
+ row.innerHTML='<i class="mark '+state.key+'" aria-hidden="true"></i><span>'+state.label+'</span><button aria-label="减少'+state.label+'">−</button><output></output><button aria-label="增加'+state.label+'">＋</button>';
+ const [less,more]=row.querySelectorAll('button');less.onclick=()=>{state.count--;render()};more.onclick=()=>{state.count++;render()};controls.append(row);
+}
+function render(){
+ status.replaceChildren();const labels=[];
+ states.forEach((s,i)=>{const row=controls.children[i];row.querySelector('output').textContent=s.count;row.querySelector('button').disabled=s.count===0;
+ if(s.count){const pair=document.createElement('span');pair.className='pair';if(s.key==='attention')pair.style.color='var(--amber)';pair.title=s.label+' '+s.count;pair.innerHTML='<i class="mark '+s.key+'" aria-hidden="true"></i>'+s.count;status.append(pair);labels.push(pair.title)}});
+ status.setAttribute('aria-label',labels.join('，'));status.style.display=labels.length?'':'none';
+}
+document.querySelector('#reset').onclick=()=>{states.forEach(s=>s.count=0);render()};render();
+</script></html>
