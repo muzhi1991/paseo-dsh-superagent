@@ -1,17 +1,22 @@
-import { imageMediaType } from "./image";
-import { defineRpc } from "@getpaseo/plugin";
+import { imageMediaType } from "./image.ts";
+import {
+  defineRpc,
+  defineSubscription,
+  type SubscriptionEvent,
+} from "@getpaseo/plugin";
 import { z } from "zod";
 
-export const sidebarCounts = defineRpc({
+export const sidebarCounts = defineSubscription({
   name: "superagent.sidebar-counts",
   input: z.object({}),
-  output: z
+  event: z
     .object({
       running: z.number().int().nonnegative(),
       needsAttention: z.number().int().nonnegative(),
     })
     .nullable(),
 });
+export type SidebarSnapshot = SubscriptionEvent<typeof sidebarCounts>;
 export const activeInstance = defineRpc({
   name: "connection.target",
   input: z.object({}),

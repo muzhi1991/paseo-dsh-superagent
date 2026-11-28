@@ -8,10 +8,9 @@ import {
   View,
 } from "react-native";
 import type { PluginSidebarItemProps } from "@getpaseo/plugin/client";
-import type { RpcOutput } from "@getpaseo/plugin";
-import type { sidebarCounts } from "../shared/api";
+import type { SidebarSnapshot } from "../shared/api";
 
-type Counts = NonNullable<RpcOutput<typeof sidebarCounts>>;
+type Counts = NonNullable<SidebarSnapshot>;
 
 const blue = "#499aeb";
 const mark = {

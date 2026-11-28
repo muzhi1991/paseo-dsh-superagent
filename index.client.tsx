@@ -4,9 +4,8 @@ import type {
   PluginSidebarItemProps,
   PluginScreenProps,
 } from "@getpaseo/plugin/client";
-import { useRpc } from "@getpaseo/plugin/client";
-import { useQuery } from "@tanstack/react-query";
-import { sidebarCounts } from "./shared/api";
+import { useSubscription } from "@getpaseo/plugin/client";
+import { sidebarCounts, type SidebarSnapshot } from "./shared/api";
 import { SidebarCounts } from "./client/sidebar-counts";
 import { SidebarRow } from "@getpaseo/plugin/client/ui";
 import { Panel } from "./client/panel";
@@ -16,15 +15,9 @@ function Sidebar(props: PluginSidebarItemProps) {
   const { currentScreen, openScreen, layout } = props;
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
-  const readCounts = useRpc(sidebarCounts);
-  const counts = useQuery({
-    queryKey: ["dsh-sidebar-counts", props.host.id],
-    queryFn: () => readCounts({}),
-    refetchInterval: 15_000,
-    staleTime: 10_000,
-    retry: false,
-  });
-  const status = !counts.isError && counts.data;
+  const [snapshot, setSnapshot] = useState<SidebarSnapshot>(null);
+  const subscription = useSubscription(sidebarCounts, {}, setSnapshot);
+  const status = subscription.status === "live" && snapshot;
 
   return (
     <>
@@ -78,7 +71,7 @@ export default function contribute(client: PluginClientContext) {
   client.addSidebarHeaderItem({
     id: "superagent",
     title: "DSH Superagent",
-    Component: Sidebar,
+    Component: (props) => <Sidebar key={props.host.id} {...props} />,
   });
   client.addSettingsScreen({
     id: "connection",

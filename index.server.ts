@@ -23,19 +23,13 @@ import {
 } from "./server/connection";
 import { readHistory } from "./server/router";
 import { dispatch } from "./server/dispatch";
+import { createSidebarPoller } from "./server/sidebar-counts";
 import { readPanel } from "./server/panel";
 
 export default function contribute(server: PluginServerContext) {
   server.handle(api.activeInstance, async () => (await target()).instance);
-  server.handle(api.sidebarCounts, async () => {
-    const c = await config();
-    if (!c.cookie) return null;
-    const overview = await management(c, "overview");
-    return {
-      running: overview.executor.running,
-      needsAttention: overview.person.length,
-    };
-  });
+  const sidebar = createSidebarPoller();
+  server.handle(api.sidebarCounts, (_, context) => sidebar.subscribe(context));
   server.handle(view, readSupervision);
   server.handle(transcript, readTranscript);
   server.handle(eventDetail, readEventDetail);
@@ -70,7 +64,11 @@ export default function contribute(server: PluginServerContext) {
     const c = await config();
     return { url: c.url, authenticated: !!c.cookie };
   });
-  server.handle(api.verify, check);
+  server.handle(api.verify, async (input) => {
+    const result = await check(input);
+    if (result.saved) sidebar.connectionChanged();
+    return result;
+  });
   server.handle(api.panel, readPanel);
   server.handle(api.history, ({ before }) => readHistory(before));
   server.handle(api.send, dispatch);
@@ -124,5 +122,5 @@ export default function contribute(server: PluginServerContext) {
       throw Error(v.error?.message || "DSH 未接收附件");
     return v.value.receiptId;
   });
-  return () => {};
+  return sidebar.dispose;
 }

@@ -63,10 +63,11 @@ function origin(input: string) {
   return url.origin;
 }
 export async function request(c: Config, path: string, init: RequestInit = {}) {
+  const timeout = AbortSignal.timeout(20000);
   const response = await fetch(c.url + path, {
     ...init,
     redirect: "manual",
-    signal: AbortSignal.timeout(20000),
+    signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout,
     headers: { ...(c.cookie ? { cookie: c.cookie } : {}), ...init.headers },
   });
   // The unauthenticated root probe checks only whether the instance answers.
@@ -83,8 +84,13 @@ export async function request(c: Config, path: string, init: RequestInit = {}) {
   }
   return response;
 }
-export async function management(c: Config, route: string): Promise<any> {
+export async function management(
+  c: Config,
+  route: string,
+  signal?: AbortSignal,
+): Promise<any> {
   const r = await request(c, "/orchestrator/api/" + route, {
+    signal,
     headers: { "x-orchestrator-request": "1" },
   });
   if (!r.ok) throw Error("Superagent 管理接口返回 HTTP " + r.status);
